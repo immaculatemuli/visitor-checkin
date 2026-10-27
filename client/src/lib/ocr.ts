@@ -1,4 +1,4 @@
-import type { Worker } from 'tesseract.js';
+import type { PSM, Worker } from 'tesseract.js';
 import { parseMrzFromText, type MrzResult } from './mrz';
 
 /**
@@ -11,11 +11,10 @@ let workerPromise: Promise<Worker> | null = null;
 /** Starts downloading and initialising the OCR engine. Safe to call repeatedly. */
 export function warmUpOcr(): Promise<Worker> {
   workerPromise ??= (async () => {
-    const { createWorker, PSM } = await import('tesseract.js');
+    const { createWorker } = await import('tesseract.js');
     const worker = await createWorker('eng');
     await worker.setParameters({
       tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
-      tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
       user_defined_dpi: '300',
     });
     return worker;
@@ -26,11 +25,17 @@ export function warmUpOcr(): Promise<Worker> {
   return workerPromise;
 }
 
-export async function recognizeMrz(canvas: HTMLCanvasElement): Promise<MrzResult | null> {
+export async function recognizeMrz(canvas: HTMLCanvasElement, wholeImage = false): Promise<MrzResult | null> {
   const worker = await warmUpOcr();
+  // A whole photo has other text around the MRZ, so let tesseract find the text blocks itself.
+  await worker.setParameters({ tessedit_pageseg_mode: wholeImage ? PSM_AUTO : PSM_SINGLE_BLOCK });
   const { data } = await worker.recognize(canvas);
   return parseMrzFromText(data.text);
 }
+
+// Numeric values of tesseract's PSM enum, so the main bundle doesn't import tesseract.js eagerly.
+const PSM_AUTO = '3' as PSM;
+const PSM_SINGLE_BLOCK = '6' as PSM;
 
 export interface Crop {
   x: number;
@@ -39,27 +44,31 @@ export interface Crop {
   h: number;
 }
 
+/** Clockwise quarter turns: 1 for a document photographed sideways, 2 for upside down. */
+export type Turns = 0 | 1 | 2 | 3;
+
 /**
- * Copies a region of an image/video to a canvas sized for OCR (about 1000px wide, which keeps
- * MRZ characters near tesseract's preferred height), in greyscale with stretched contrast.
+ * Copies a region of an image to a canvas sized for OCR (`width` px across once rotated, which
+ * keeps MRZ characters near tesseract's preferred height), in greyscale with stretched contrast.
  */
 export function prepareCanvas(
   source: CanvasImageSource,
   crop: Crop,
-  options: { binarize?: boolean; rotate?: boolean } = {},
+  options: { binarize?: boolean; turns?: Turns; width?: number } = {},
 ): HTMLCanvasElement {
-  const scale = Math.min(2, 1000 / crop.w);
-  const w = Math.round(crop.w * scale);
-  const h = Math.round(crop.h * scale);
+  const turns = options.turns ?? 0;
+  const sideways = turns % 2 === 1;
+  const scale = Math.min(2, (options.width ?? 1000) / (sideways ? crop.h : crop.w));
+  const w = Math.round((sideways ? crop.h : crop.w) * scale);
+  const h = Math.round((sideways ? crop.w : crop.h) * scale);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  if (options.rotate) {
-    ctx.translate(w, h);
-    ctx.rotate(Math.PI);
-  }
-  ctx.drawImage(source, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate((turns * Math.PI) / 2);
+  const [dw, dh] = [crop.w * scale, crop.h * scale];
+  ctx.drawImage(source, crop.x, crop.y, crop.w, crop.h, -dw / 2, -dh / 2, dw, dh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   const image = ctx.getImageData(0, 0, w, h);
@@ -85,23 +94,59 @@ export function prepareCanvas(
   return canvas;
 }
 
-/** Fallback for a still photo: tries the likely MRZ regions, cheapest first. */
+interface Attempt {
+  crop: Crop;
+  turns?: Turns;
+  binarize?: boolean;
+  whole?: boolean;
+}
+
+/**
+ * Reads the MRZ from a photo taken any way up: the document may fill the frame or sit in the
+ * middle of it, upright, sideways or upside down. Tries the likeliest layouts first and stops at
+ * the first fully valid read.
+ */
 export async function readMrzFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<MrzResult | null> {
   const bitmap = await createImageBitmap(file);
   const { width: W, height: H } = bitmap;
-  const attempts: { crop: Crop; binarize?: boolean; rotate?: boolean }[] = [
-    { crop: { x: 0, y: H * 0.6, w: W, h: H * 0.4 } },
-    { crop: { x: 0, y: H * 0.6, w: W, h: H * 0.4 }, binarize: true },
-    { crop: { x: 0, y: H * 0.35, w: W, h: H * 0.65 } },
-    { crop: { x: 0, y: 0, w: W, h: H * 0.4 }, rotate: true }, // photo taken upside down
-  ];
+  const full = { x: 0, y: 0, w: W, h: H };
+  const bottom = { x: 0, y: H * 0.5, w: W, h: H * 0.5 };
+  const top = { x: 0, y: 0, w: W, h: H * 0.5 };
+  const right = { x: W * 0.5, y: 0, w: W * 0.5, h: H };
+  const left = { x: 0, y: 0, w: W * 0.5, h: H };
+
+  // A landscape photo is usually the card upright; a portrait one is a card held level in the
+  // middle of the frame, or a card turned sideways to fill it.
+  const attempts: Attempt[] =
+    W >= H
+      ? [
+          { crop: bottom },
+          { crop: full, whole: true },
+          { crop: bottom, binarize: true },
+          { crop: top, turns: 2 },
+          { crop: full, whole: true, turns: 1 },
+          { crop: full, whole: true, turns: 3 },
+        ]
+      : [
+          { crop: full, whole: true },
+          { crop: right, turns: 1 },
+          { crop: left, turns: 3 },
+          { crop: full, whole: true, binarize: true },
+          { crop: full, whole: true, turns: 2 },
+        ];
+
   let best: MrzResult | null = null;
   try {
     for (const [i, attempt] of attempts.entries()) {
       onProgress?.(i / attempts.length);
-      const result = await recognizeMrz(prepareCanvas(bitmap, attempt.crop, attempt));
+      const canvas = prepareCanvas(bitmap, attempt.crop, {
+        turns: attempt.turns,
+        binarize: attempt.binarize,
+        width: attempt.whole ? 1400 : 1000,
+      });
+      const result = await recognizeMrz(canvas, attempt.whole);
       if (result?.valid) return result;
-      best ??= result;
+      if (result && (!best || score(result) > score(best))) best = result;
     }
     return best;
   } finally {
@@ -109,8 +154,9 @@ export async function readMrzFromPhoto(file: File, onProgress?: (fraction: numbe
   }
 }
 
-export function liveCameraSupported(): boolean {
-  return window.isSecureContext && !!navigator.mediaDevices?.getUserMedia;
+/** How many check digits passed, to keep the best of several partial reads. */
+function score(result: MrzResult): number {
+  return Object.values(result.checks).filter(Boolean).length;
 }
 
 function percentile(histogram: number[], total: number, p: number): number {

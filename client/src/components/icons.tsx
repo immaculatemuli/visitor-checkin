@@ -100,12 +100,6 @@ export const IconShield = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
-export const IconFlash = (p: SVGProps<SVGSVGElement>) => (
-  <Icon {...p}>
-    <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />
-  </Icon>
-);
-
 export const IconLogout = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 16l-4-4 4-4M5 12h11" />

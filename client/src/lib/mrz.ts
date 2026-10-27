@@ -88,11 +88,25 @@ export function parseMrzDate(yymmdd: string, kind: 'birth' | 'expiry', now = new
   return date.toISOString().slice(0, 10);
 }
 
+// OCR often reads runs of '<' filler as L or K; no real name part is made only of those.
+function dropFillerWords(s: string): string {
+  return s
+    .split(' ')
+    .filter((w) => !/^[LK]{3,}$/.test(w))
+    .join(' ');
+}
+
 function parseNames(field: string): { surname: string; givenNames: string } {
   const cleaned = lettersOnly(field);
   const sep = cleaned.indexOf('<<');
-  if (sep === -1) return { surname: trimFiller(cleaned), givenNames: '' };
-  return { surname: trimFiller(cleaned.slice(0, sep)), givenNames: trimFiller(cleaned.slice(sep + 2)) };
+  if (sep === -1) return { surname: dropFillerWords(trimFiller(cleaned)), givenNames: '' };
+  // Given names are separated by single '<'; the next '<<' starts the trailing filler.
+  const rest = cleaned.slice(sep + 2);
+  const end = rest.indexOf('<<');
+  return {
+    surname: dropFillerWords(trimFiller(cleaned.slice(0, sep))),
+    givenNames: dropFillerWords(trimFiller(end === -1 ? rest : rest.slice(0, end))),
+  };
 }
 
 function titleCase(s: string): string {

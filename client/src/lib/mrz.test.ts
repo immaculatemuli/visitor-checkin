@@ -168,6 +168,18 @@ describe('reading MRZ from OCR output', () => {
     expect(parseMrz(found!.lines, NOW).idNumber).toBe('12345678');
   });
 
+  it('ignores name filler that OCR misread as L or K', () => {
+    const lines = [MAISHA_CARD[0], MAISHA_CARD[1], 'WANJIKU<<GRACE<AKINYI<<<L<LLLL'];
+    expect(parseMrz(lines, NOW).fullName).toBe('Grace Akinyi Wanjiku');
+    const sideways = [MAISHA_CARD[0], MAISHA_CARD[1], 'WANJIKU<<GRACE<AKINYI<LLLLLLLL'];
+    expect(parseMrz(sideways, NOW).fullName).toBe('Grace Akinyi Wanjiku');
+  });
+
+  it('keeps real names that contain L or K', () => {
+    const lines = [MAISHA_CARD[0], MAISHA_CARD[1], 'KILEL<<WILLIAM<KIPLAGAT<<<<<<<'];
+    expect(parseMrz(lines, NOW).fullName).toBe('William Kiplagat Kilel');
+  });
+
   it('returns null when there is no MRZ', () => {
     expect(parseMrzFromText('JAMHURI YA KENYA\nREPUBLIC OF KENYA', NOW)).toBeNull();
   });

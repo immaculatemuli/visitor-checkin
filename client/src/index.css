@@ -18,16 +18,6 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-@keyframes scan {
-  0%,
-  100% {
-    top: 10%;
-  }
-  50% {
-    top: 85%;
-  }
-}
-
 @media print {
   @page {
     size: A4;
