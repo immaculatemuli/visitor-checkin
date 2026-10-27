@@ -7,6 +7,7 @@ import type {
   SVGProps,
   TextareaHTMLAttributes,
 } from 'react';
+import { Link } from 'react-router';
 import { IconAlert, IconBack, IconCheck, IconChevron, IconInfo } from './icons';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
@@ -222,7 +223,9 @@ export function VisitorShell({
               <IconBack className="h-5 w-5" />
             </button>
           ) : (
-            <Logo />
+            <Link to="/checkin" aria-label="Back to the start">
+              <Logo />
+            </Link>
           )}
           {step && <span className="ml-auto text-xs font-medium text-slate-400">Step {step.current} of {step.total}</span>}
         </div>

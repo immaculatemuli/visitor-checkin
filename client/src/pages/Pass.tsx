@@ -48,7 +48,7 @@ export default function Pass() {
       </Button>
     ) : visit.status !== 'PENDING_APPROVAL' ? (
       <Button size="lg" onClick={() => navigate('/checkin')}>
-        Check in again
+        Done
       </Button>
     ) : undefined;
 
@@ -60,7 +60,7 @@ export default function Pass() {
   }[visit.status];
 
   return (
-    <VisitorShell footer={footer}>
+    <VisitorShell footer={footer} onBack={() => navigate('/checkin')}>
       <PageTitle
         title={title}
         subtitle={
