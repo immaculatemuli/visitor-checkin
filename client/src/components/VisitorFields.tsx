@@ -78,7 +78,7 @@ export function DocumentFields({
         </Field>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Date of birth" error={errors.dob}>
+        <Field label="Date of birth (optional)" error={errors.dob}>
           <Input type="date" value={value.dob} onChange={(e) => set({ dob: e.target.value })} invalid={!!errors.dob} />
         </Field>
         {isPassport && (

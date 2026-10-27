@@ -27,7 +27,7 @@ export default function Poster() {
           <ol className="mt-auto grid w-full grid-cols-3 gap-[8mm]">
             {[
               ['1', 'Scan this code', 'No app needed'],
-              ['2', 'Photograph your ID', 'The front. It stays on your phone'],
+              ['2', 'Enter your ID details', 'Name, ID number and department'],
               ['3', 'Show your pass', 'Check out when you leave'],
             ].map(([n, title, sub]) => (
               <li key={n}>

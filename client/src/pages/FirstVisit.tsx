@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, ApiError, errorMessage, type DocumentType, type VisitCategory } from '../lib/api';
 import { isExpired, type MrzResult } from '../lib/mrz';
-import { warmUpOcr, type ScanResult } from '../lib/ocr';
+import type { ScanResult } from '../lib/ocr';
 import { todayIso } from '../lib/format';
 import { useConfig } from '../lib/hooks';
 import { ConsentNotice } from '../components/ConsentNotice';
 import { DocumentScanner } from '../components/DocumentScanner';
+import { IconCamera } from '../components/icons';
 import {
   DocumentFields,
   documentPayload,
@@ -20,8 +21,7 @@ import {
 } from '../components/VisitorFields';
 import { Alert, Button, FullPageSpinner, PageTitle, VisitorShell } from '../components/ui';
 
-const STEPS = ['scan', 'details'] as const;
-type Step = (typeof STEPS)[number];
+type Step = 'details' | 'scan';
 
 function fromMrz(mrz: MrzResult, documentType: DocumentType): DocumentValues {
   return {
@@ -52,11 +52,14 @@ function uncertainFields(mrz: MrzResult, documentType: DocumentType): Record<str
   return e;
 }
 
-/** First visit: photograph the ID, check the filled-in details, choose a department, check in. */
+/**
+ * First visit: type the details from the ID (or fill them in from a photo of it), choose a
+ * department, check in.
+ */
 export function FirstVisit({ category, onExit }: { category: VisitCategory; onExit: () => void }) {
   const navigate = useNavigate();
   const config = useConfig();
-  const [step, setStep] = useState<Step>('scan');
+  const [step, setStep] = useState<Step>('details');
   const [doc, setDoc] = useState<DocumentValues>(emptyDocument('national_id'));
   const [visit, setVisit] = useState<VisitValues>(emptyVisit(category));
   // How the details were filled in: a fully verified MRZ, an MRZ with failed checks, or the front.
@@ -66,13 +69,7 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    void warmUpOcr().catch(() => {});
-  }, []);
-
   if (!config) return <VisitorShell><FullPageSpinner /></VisitorShell>;
-
-  const stepInfo = { current: STEPS.indexOf(step) + 1, total: STEPS.length };
 
   function handleScan(result: ScanResult) {
     if (result.kind === 'front') {
@@ -122,23 +119,15 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
 
   if (step === 'scan') {
     return (
-      <VisitorShell onBack={onExit} step={stepInfo}>
-        <DocumentScanner
-          documentType={doc.documentType}
-          onResult={handleScan}
-          onManual={() => {
-            setScanned(null);
-            setStep('details');
-          }}
-        />
+      <VisitorShell onBack={() => setStep('details')}>
+        <DocumentScanner documentType={doc.documentType} onResult={handleScan} onManual={() => setStep('details')} />
       </VisitorShell>
     );
   }
 
   return (
     <VisitorShell
-      onBack={() => setStep('scan')}
-      step={stepInfo}
+      onBack={onExit}
       footer={
         <>
           <Button size="lg" loading={busy} disabled={passportExpired} onClick={() => void submit()}>
@@ -153,7 +142,21 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
         </>
       }
     >
-      <PageTitle title="Confirm your details" subtitle={scanned ? 'We filled these in from your ID. Check them and choose your department.' : undefined} />
+      <PageTitle
+        title={scanned ? 'Confirm your details' : 'Your details'}
+        subtitle={scanned ? 'We filled these in from your ID. Check them and choose your department.' : 'Type them as they appear on your ID.'}
+      />
+
+      {!scanned && (
+        <button
+          type="button"
+          onClick={() => setStep('scan')}
+          className="mb-6 flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-left text-sm font-semibold text-brand-700 transition hover:bg-brand-50"
+        >
+          <IconCamera className="h-5 w-5 shrink-0" />
+          Fill this in from a photo of my ID (optional)
+        </button>
+      )}
 
       <div className="space-y-4">
         {scanned === 'check' && <Alert tone="warning">Please check the highlighted details against your document.</Alert>}
@@ -167,11 +170,10 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
       </div>
 
       <section className="mt-6">
-        <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config.departments} />
-      </section>
-      <section className="mt-8">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Your details</h2>
         <DocumentFields value={doc} onChange={setDoc} errors={errors} showType={!scanned} />
+      </section>
+      <section className="mt-6">
+        <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config.departments} />
       </section>
       {showNotice && (
         <section className="mt-8">

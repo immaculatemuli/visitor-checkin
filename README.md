@@ -22,7 +22,7 @@ A web app for visitor check-in at the reception of the National Youth Service He
 | Visitor | Staff |
 |---|---|
 | Scans the reception QR poster, which opens `/checkin` | Signs in at `/admin/login` |
-| **First visit:** picks visitor or attachee, photographs the front of their ID (or passport), checks the pre-filled details, chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
+| **First visit:** picks visitor or attachee, types their name, ID number and date of birth (or fills them in from a photo of the ID), chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
 | **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
 | Scans the QR again and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
@@ -213,7 +213,7 @@ On Railway, use build command `npm ci --include=dev && npm run build -w server` 
 
 ## Document scanning notes
 
-Visitors photograph the **front** of their ID; a photo of the back, or of a passport page, also works. [`readIdFromPhoto()`](client/src/lib/ocr.ts) first reads the whole photo (turning it if needed) to see which side it is.
+Visitors type their details by default; filling them in from a photo is optional. For a photo, the **front** of the ID works best, and the back or a passport page also works. [`readIdFromPhoto()`](client/src/lib/ocr.ts) first reads the whole photo (turning it if needed) to see which side it is.
 
 **Front of a Kenyan ID.** The parser ([client/src/lib/idfront.ts](client/src/lib/idfront.ts)) finds the values by their printed labels, so it handles both the older ID (`SERIAL NUMBER`, `ID NUMBER`, `FULL NAMES`, `DATE OF BIRTH`) and the Maisha card (`SURNAME`, `GIVEN NAMES`, `ID NUMBER`, `DATE OF BIRTH`). It never takes the serial number for the ID number. The front has no check digits, so the photo is read three times with different processing and combined field by field. Any field the reads don't all agree on is highlighted on the confirm screen for the visitor to check.
 
