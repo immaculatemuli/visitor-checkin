@@ -80,6 +80,8 @@ function nameReader(minWords: number) {
   return (s: string): string | null => {
     const words = s
       .split(/\s+/)
+      // A stray | or ] right after a final I is a frame line or noise, not a second I.
+      .map((w) => w.replace(/(?<=I)[!|\][]+$/, ''))
       .map((w) => (/[A-Z]/.test(w) ? w.replace(/[!|\][1058]/g, (c) => TO_LETTER[c]) : w))
       .map((w) => w.replace(/[^A-Z'-]/g, ''))
       .filter((w) => w.replace(/[^A-Z]/g, '').length >= 3);
@@ -113,22 +115,33 @@ function titleCase(s: string): string {
   return s.toLowerCase().replace(/(^|[\s'-])\p{L}/gu, (c) => c.toUpperCase());
 }
 
-/** Fields from the front of a Kenyan ID, or null if the text isn't one. */
-export function parseIdFront(text: string): IdFront | null {
+function readFields(text: string) {
   const lines = normalise(text);
   const idNumber = valueFor(lines, ID_LABEL, findIdNumber) ?? valueFor(lines, NUMBER_LABEL, findIdNumber);
-
   let name = valueFor(lines, FULL_NAMES, nameReader(2), true);
   if (!name) {
     const surname = valueFor(lines, SURNAME, nameReader(1), true);
     const given = valueFor(lines, GIVEN_NAMES, nameReader(1), true);
     name = surname && given ? `${given} ${surname}` : null;
   }
-  const dateOfBirth = valueFor(lines, DOB_LABEL, findDate);
+  return { idNumber, name: name && titleCase(name), dateOfBirth: valueFor(lines, DOB_LABEL, findDate) };
+}
 
-  // Without the ID number and a name it isn't a usable read.
+/** Fields from the front of a Kenyan ID, or null unless both the ID number and name were read. */
+export function parseIdFront(text: string): IdFront | null {
+  const { idNumber, name, dateOfBirth } = readFields(text);
   if (!idNumber || !name) return null;
-  return { fullName: titleCase(name), idNumber, dateOfBirth };
+  return { fullName: name, idNumber, dateOfBirth };
+}
+
+/**
+ * Whatever front fields could be read (missing ones are empty), or null if neither the ID number
+ * nor the name was found. Used when no read is complete, so the visitor only types the rest.
+ */
+export function parseIdFrontPartial(text: string): IdFront | null {
+  const { idNumber, name, dateOfBirth } = readFields(text);
+  if (!idNumber && !name) return null;
+  return { fullName: name ?? '', idNumber: idNumber ?? '', dateOfBirth };
 }
 
 export type FrontField = keyof IdFront;

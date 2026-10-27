@@ -80,8 +80,9 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
       const { fullName, idNumber, dateOfBirth } = result.front;
       setDoc({ ...emptyDocument('national_id'), fullName, documentNumber: idNumber, dob: dateOfBirth ?? '' });
       const field = { fullName: 'fullName', idNumber: 'documentNumber', dateOfBirth: 'dob' } as const;
-      const hint = 'This may have been misread. Check it against your ID.';
-      setErrors(Object.fromEntries(result.uncertain.map((f) => [field[f], hint])));
+      const hint = (f: keyof typeof field) =>
+        result.front[f] ? 'This may have been misread. Check it against your ID.' : "We couldn't read this. Please type it in.";
+      setErrors(Object.fromEntries(result.uncertain.map((f) => [field[f], hint(f)])));
       setScanned(result.uncertain.length ? 'check' : 'front');
     } else {
       // A passport is recognised from its MRZ, so there's no need to ask which document it is.

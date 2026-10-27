@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DocumentType } from '../lib/api';
 import { readIdFromPhoto, warmUpOcr, type ScanResult } from '../lib/ocr';
-import { IconCamera, IconKeyboard } from './icons';
+import { IconCamera, IconImage, IconKeyboard } from './icons';
 import { Alert, Button, Spinner } from './ui';
 
 // ID-1 cards are 85.6 x 54mm with 3 MRZ lines; a passport data page is about 125 x 88mm with 2.
@@ -24,9 +24,12 @@ export function DocumentScanner({
   onManual: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const gallery = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
+  // The text OCR saw in a photo it couldn't use, so the visitor (or support) can see why.
+  const [seen, setSeen] = useState('');
   const guide = GUIDE[documentType];
 
   useEffect(() => {
@@ -40,22 +43,24 @@ export function DocumentScanner({
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setFailed(false);
+    setSeen('');
     setProgress(0);
     setPreview(URL.createObjectURL(file));
     try {
-      const result = await readIdFromPhoto(file, setProgress);
+      const { result, seen } = await readIdFromPhoto(file, setProgress);
       if (result) {
         navigator.vibrate?.(60);
         onResult(result);
         return;
       }
+      setSeen(seen.trim());
       setFailed(true);
     } catch (err) {
       console.error(err);
       setFailed(true);
     } finally {
       setPreview(null);
-      if (input.current) input.current.value = '';
+      for (const el of [input.current, gallery.current]) if (el) el.value = '';
     }
   }
 
@@ -112,12 +117,23 @@ export function DocumentScanner({
             </div>
           )}
         </div>
-        <p className="mt-4 text-sm text-slate-600">Fill the photo with the card, in good light and with no glare.</p>
+        <ul className="mt-4 space-y-1 text-left text-sm text-slate-600">
+          <li>• Hold the phone a hand-span (about 20 cm) from the card. Too close and it can't focus.</li>
+          <li>• Tap the card on your screen to focus, and wait until it looks sharp.</li>
+          <li>• Use good light and tilt the card a little to avoid glare.</li>
+        </ul>
       </button>
 
       {failed && (
         <Alert tone="warning" title="We couldn't read that photo">
-          Move closer so the card fills most of the photo, use good light, and hold still. Or type your details instead.
+          Check the photo is sharp (tap to focus first) and the whole card is in it, then try again. Or type your details instead.
+          {seen && (
+            <details className="mt-3">
+              <summary className="cursor-pointer font-semibold">Show what the scanner read</summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 p-2 text-xs">{seen}</pre>
+              <p className="mt-1 text-xs">This stays on your phone.</p>
+            </details>
+          )}
         </Alert>
       )}
 
@@ -125,9 +141,16 @@ export function DocumentScanner({
       <Button size="lg" onClick={() => input.current?.click()}>
         <IconCamera className="h-5 w-5" /> {failed ? 'Try again' : documentType === 'passport' ? 'Scan passport' : 'Scan ID card'}
       </Button>
-      <Button size="lg" variant="secondary" onClick={onManual}>
-        <IconKeyboard className="h-5 w-5" /> Type details instead
-      </Button>
+      {/* No capture attribute: opens the photo library, for a photo taken with the camera app. */}
+      <input ref={gallery} type="file" accept="image/*" className="hidden" onChange={(e) => void handleFile(e.target.files?.[0])} />
+      <div className="grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={() => gallery.current?.click()}>
+          <IconImage className="h-5 w-5" /> Choose a photo
+        </Button>
+        <Button variant="secondary" onClick={onManual}>
+          <IconKeyboard className="h-5 w-5" /> Type details
+        </Button>
+      </div>
       <p className="text-center text-xs text-slate-400">Scanning happens on your phone. Nothing is uploaded or saved.</p>
     </div>
   );

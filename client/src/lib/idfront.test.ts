@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineFrontReads, parseIdFront } from './idfront';
+import { combineFrontReads, parseIdFront, parseIdFrontPartial } from './idfront';
 
 // OCR-style text of ID fronts (synthetic people), including typical noise.
 const OLD_ID = `JAMHURI YA KENYA   REPUBLIC OF KENYA
@@ -94,6 +94,17 @@ DATE 0F BIRTH 04/07/1985`;
     const { front, uncertain } = combineFrontReads([dropped, dropped, full]);
     expect(front.idNumber).toBe('12345678');
     expect(uncertain).toEqual(['idNumber']);
+  });
+
+  it('does not double a final I when a frame line follows it', () => {
+    const ocr = 'SURNAME\nWANJIKU\nGIVEN NAMES\nGRACE AKINYI|\nID NUMBER\n12345678';
+    expect(parseIdFront(ocr)?.fullName).toBe('Grace Akinyi Wanjiku');
+  });
+
+  it('returns what it could read when part of the front is unreadable', () => {
+    expect(parseIdFrontPartial('ID NUMBER: 23456789\nFULL NAMES\n~~ ;;')).toEqual({ fullName: '', idNumber: '23456789', dateOfBirth: null });
+    expect(parseIdFrontPartial('FULL NAMES\nBRIAN KIPKORIR OTIENO')).toMatchObject({ fullName: 'Brian Kipkorir Otieno', idNumber: '' });
+    expect(parseIdFrontPartial('HELLO WORLD')).toBeNull();
   });
 
   it('returns null for text that is not an ID front', () => {

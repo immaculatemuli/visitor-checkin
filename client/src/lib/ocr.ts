@@ -1,5 +1,5 @@
-import type { PSM, Worker } from 'tesseract.js';
-import { combineFrontReads, parseIdFront, type FrontField, type IdFront } from './idfront';
+import type { Line, PSM, Worker } from 'tesseract.js';
+import { combineFrontReads, parseIdFront, parseIdFrontPartial, type FrontField, type IdFront } from './idfront';
 import { extractMrzLines, parseMrz, voteMrzLines, type MrzResult } from './mrz';
 
 /**
@@ -33,14 +33,22 @@ export function warmUpOcr(): Promise<Worker> {
  * the printed front needs every character.
  */
 async function recognizeText(canvas: HTMLCanvasElement, { wholeImage, mrz }: { wholeImage: boolean; mrz: boolean }): Promise<string> {
+  return (await recognizeWithLines(canvas, { wholeImage, mrz, lines: false })).text;
+}
+
+/** OCR text plus, if asked, each text line with its position in the canvas. */
+async function recognizeWithLines(
+  canvas: HTMLCanvasElement,
+  { wholeImage, mrz, lines }: { wholeImage: boolean; mrz: boolean; lines: boolean },
+): Promise<{ text: string; lines: Line[] }> {
   const worker = await warmUpOcr();
   // A whole photo has other text around the MRZ, so let tesseract find the text blocks itself.
   await worker.setParameters({
     tessedit_pageseg_mode: wholeImage ? PSM_AUTO : PSM_SINGLE_BLOCK,
     tessedit_char_whitelist: mrz ? MRZ_CHARS : '',
   });
-  const { data } = await worker.recognize(canvas);
-  return data.text;
+  const { data } = await worker.recognize(canvas, {}, { text: true, blocks: lines });
+  return { text: data.text, lines: (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines)) };
 }
 
 /** The MRZ lines OCR finds in the canvas, or null if there is no MRZ in it. */
@@ -126,12 +134,63 @@ interface Attempt {
   tilt?: number;
 }
 
+const FRONT_WIDTH = 1600;
+
+/**
+ * The part of the photo the text sits in, in photo pixels, from the lines OCR found in a canvas
+ * made by prepareCanvas(bitmap, full photo, look). Null when the text already fills most of the
+ * photo, so zooming in wouldn't help.
+ */
+function textRegion(lines: Line[], canvas: HTMLCanvasElement, photo: Crop, look: Look): Crop | null {
+  const solid = lines.filter((l) => l.confidence >= 50 && l.text.replace(/[^A-Za-z0-9]/g, '').length >= 3);
+  if (solid.length < 2) return null;
+  const box = solid.reduce(
+    (b, l) => ({ x0: Math.min(b.x0, l.bbox.x0), y0: Math.min(b.y0, l.bbox.y0), x1: Math.max(b.x1, l.bbox.x1), y1: Math.max(b.y1, l.bbox.y1) }),
+    { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
+  );
+  if ((box.x1 - box.x0) * (box.y1 - box.y0) > canvas.width * canvas.height * 0.5) return null;
+
+  // Undo prepareCanvas's scale and quarter turns to map the box corners back onto the photo.
+  const turns = look.turns ?? 0;
+  const scale = canvas.width / (turns % 2 ? photo.h : photo.w);
+  const angle = (-turns * Math.PI) / 2;
+  const corners = [
+    [box.x0, box.y0],
+    [box.x1, box.y0],
+    [box.x0, box.y1],
+    [box.x1, box.y1],
+  ].map(([x, y]) => {
+    const [dx, dy] = [x - canvas.width / 2, y - canvas.height / 2];
+    return [
+      (dx * Math.cos(angle) - dy * Math.sin(angle)) / scale + photo.w / 2,
+      (dx * Math.sin(angle) + dy * Math.cos(angle)) / scale + photo.h / 2,
+    ];
+  });
+  const xs = corners.map((c) => c[0]);
+  const ys = corners.map((c) => c[1]);
+  // Generous padding: lines OCR missed (often the ID number) are usually just outside the box.
+  const padX = (Math.max(...xs) - Math.min(...xs)) * 0.15;
+  const padY = (Math.max(...ys) - Math.min(...ys)) * 0.25;
+  const x = Math.max(0, Math.min(...xs) - padX);
+  const y = Math.max(0, Math.min(...ys) - padY);
+  return { x, y, w: Math.min(photo.w, Math.max(...xs) + padX) - x, h: Math.min(photo.h, Math.max(...ys) + padY) - y };
+}
+
+/** What reading a photo produced, plus the text OCR saw, to show when nothing could be read. */
+export interface PhotoRead {
+  result: ScanResult | null;
+  seen: string;
+}
+
 /**
  * Reads an ID from a photo of either side, taken any way up. A first full read of the photo
- * shows which side it is: the printed front is parsed from its labels; the back of an ID or a
- * passport page goes to the MRZ reader.
+ * shows which side it is and where the card is. A card that's small in the photo (held at a
+ * comfortable distance from the phone) is then read again zoomed in from the full-resolution
+ * photo. The printed front is parsed from its labels; the back of an ID or a passport page goes
+ * to the MRZ reader. If only some front fields can be read, those are returned for the visitor
+ * to complete.
  */
-export async function readIdFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<ScanResult | null> {
+export async function readIdFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<PhotoRead> {
   const bitmap = await createImageBitmap(file);
   const { width: W, height: H } = bitmap;
   const full = { x: 0, y: 0, w: W, h: H };
@@ -141,25 +200,58 @@ export async function readIdFromPhoto(file: File, onProgress?: (fraction: number
     { binarize: true },
     ...(W >= H ? [2, 1, 3] : [1, 3, 2]).map((turns) => ({ turns: turns as Turns })),
   ];
-  const readFront = (look: Look) =>
-    recognizeText(prepareCanvas(bitmap, full, { ...look, width: look.width ?? 1600 }), { wholeImage: true, mrz: false });
+  const readArea = (crop: Crop) => (look: Look) =>
+    recognizeText(prepareCanvas(bitmap, crop, { ...look, width: look.width ?? FRONT_WIDTH }), { wholeImage: true, mrz: false });
+
+  let seen = '';
+  let partial: IdFront | null = null;
+  let sawMrz = false;
   try {
     for (const [i, look] of looks.entries()) {
       onProgress?.((i / looks.length) * 0.5);
-      const text = await readFront(look);
-      const front = parseIdFront(text);
-      if (front) {
-        onProgress?.(0.6);
-        return { kind: 'front', ...(await confirmFront(front, look, readFront, () => onProgress?.(0.85))) };
-      }
+      const canvas = prepareCanvas(bitmap, full, { ...look, width: FRONT_WIDTH });
+      const whole = await recognizeWithLines(canvas, { wholeImage: true, mrz: false, lines: true });
+      seen ||= whole.text;
       // MRZ text means it's the back of the card or a passport page.
-      if (extractMrzLines(text)) break;
+      if (extractMrzLines(whole.text)) {
+        sawMrz = true;
+        break;
+      }
+
+      const region = textRegion(whole.lines, canvas, full, look);
+      const zoomed = region ? await readArea(region)(look) : null;
+      const texts = zoomed ? [zoomed, whole.text] : [whole.text];
+      const fronts = texts.map(parseIdFront).filter((f): f is IdFront => f !== null);
+      if (fronts.length) {
+        onProgress?.(0.6);
+        // More reads from different views (zoomed or whole, plain or high contrast), so one
+        // view's misreading can't confirm itself.
+        const more = [() => readArea(region ?? full)({ ...look, binarize: !look.binarize })];
+        if (fronts.length < 2) more.push(() => readArea(full)({ ...look, binarize: false, width: 2200 }));
+        return { result: { kind: 'front', ...(await confirmFront(fronts, more, () => onProgress?.(0.85))) }, seen };
+      }
+      for (const text of texts) {
+        const some = parseIdFrontPartial(text);
+        if (some && (!partial || filled(some) > filled(partial))) partial = some;
+      }
+      if (zoomed && extractMrzLines(zoomed)) {
+        sawMrz = true;
+        break;
+      }
     }
-    const mrz = await readMrz(bitmap, (f) => onProgress?.(0.5 + f / 2));
-    return mrz ? { kind: 'mrz', mrz } : null;
+    if (sawMrz || !partial) {
+      const mrz = await readMrz(bitmap, (f) => onProgress?.(0.5 + f / 2));
+      if (mrz) return { result: { kind: 'mrz', mrz }, seen };
+    }
+    // Some of the front was readable: let the visitor fill in the rest.
+    return partial ? { result: { kind: 'front', front: partial, uncertain: ['fullName', 'idNumber', 'dateOfBirth'] }, seen } : { result: null, seen };
   } finally {
     bitmap.close();
   }
+}
+
+function filled(front: IdFront): number {
+  return [front.fullName, front.idNumber, front.dateOfBirth].filter(Boolean).length;
 }
 
 interface Look {
@@ -169,27 +261,22 @@ interface Look {
 }
 
 /**
- * The front has no check digits, so one read is never trusted alone: the photo is read twice
- * more the same way up with different processing. Fields the reads don't all agree on are
- * returned as uncertain.
+ * The front has no check digits, so one read is never trusted alone: the reads so far are
+ * combined with further reads of the photo. Fields the reads don't all agree on are returned as
+ * uncertain.
  */
 async function confirmFront(
-  first: IdFront,
-  look: Look,
-  read: (look: Look) => Promise<string>,
+  reads: IdFront[],
+  more: (() => Promise<string>)[],
   onRead: () => void,
 ): Promise<{ front: IdFront; uncertain: FrontField[] }> {
-  const reads = [first];
-  const others: Look[] = [
-    { ...look, binarize: !look.binarize },
-    { ...look, binarize: false, width: 2200 },
-  ];
-  for (const other of others) {
-    const again = parseIdFront(await read(other));
+  const all = [...reads];
+  for (const read of more) {
+    const again = parseIdFront(await read());
     onRead();
-    if (again) reads.push(again);
+    if (again) all.push(again);
   }
-  return combineFrontReads(reads);
+  return combineFrontReads(all);
 }
 
 /**

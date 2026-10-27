@@ -59,6 +59,14 @@ export const IconCamera = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const IconImage = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="4" y="5" width="16" height="14" rx="1.5" />
+    <circle cx="9" cy="10" r="1.5" />
+    <path d="m4 17 5-5 4 4 2.5-2.5L20 18" />
+  </Icon>
+);
+
 export const IconKeyboard = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <rect x="3" y="6" width="18" height="12" rx="2.5" />
