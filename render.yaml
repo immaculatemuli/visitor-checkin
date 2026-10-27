@@ -1,0 +1,44 @@
+# Render Blueprint (free plan): one web service that serves both the web app and the API.
+# The database is a free Neon Postgres (https://neon.tech), since Render's free Postgres expires after 30 days.
+# In the Render dashboard: New > Blueprint > pick this repo, then fill in the prompted values.
+services:
+  - type: web
+    name: nys-visitor-checkin
+    runtime: node
+    plan: free
+    rootDir: server
+    # The lockfile lives at the repo root (npm workspaces), so install and build from there.
+    buildCommand: cd .. && npm ci --include=dev && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # Neon connection string (the direct one, not "-pooler"), ending in ?sslmode=require
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DOC_HASH_SECRET
+        generateValue: true
+      - key: STATIC_DIR
+        value: ../client/dist
+      # CLIENT_ORIGIN defaults to this service's own URL (RENDER_EXTERNAL_URL). Set it for a custom domain.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: TIMEZONE
+        value: Africa/Nairobi
+      - key: RETENTION_MONTHS
+        value: "12"
+      # The first admin account, created on first start. Sign in, then change the password.
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false # at least 12 characters
+      # "console" writes SMS codes to the Render log. Switch to "africastalking" and add
+      # AT_USERNAME / AT_API_KEY once you have an Africa's Talking account.
+      - key: SMS_PROVIDER
+        value: console
+      - key: DPO_CONTACT
+        sync: false

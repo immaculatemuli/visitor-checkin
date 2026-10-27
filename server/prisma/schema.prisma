@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentType {
+  national_id
+  passport
+}
+
+enum VisitStatus {
+  PENDING_APPROVAL // watchlist hit: waiting for security
+  CHECKED_IN
+  CHECKED_OUT
+  DENIED
+}
+
+enum CheckInMethod {
+  SELF      // first visit, scanned on own phone
+  RETURNING // recognised device / OTP
+  MANUAL    // entered by reception
+}
+
+enum VisitCategory {
+  visitor  // here to see someone
+  attachee // on attachment at the institution; checks in daily
+}
+
+enum StaffRole {
+  admin
+  security
+}
+
+model Visitor {
+  id                 String       @id @default(uuid()) @db.Uuid
+  fullName           String       @map("full_name")
+  documentType       DocumentType @map("document_type")
+  // HMAC-SHA256 of "<type>:<number>" with a server secret. Never store the raw number.
+  documentNumberHash String       @unique @map("document_number_hash")
+  documentLast4      String       @map("document_last4")
+  nationality        String?
+  dob                DateTime?    @db.Date
+  documentExpiry     DateTime?    @map("document_expiry") @db.Date
+  phone              String
+  consentAt          DateTime     @map("consent_at")
+  consentVersion     String       @map("consent_version")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  visits       Visit[]
+  deviceTokens DeviceToken[]
+
+  @@index([phone])
+  @@map("visitors")
+}
+
+model Visit {
+  id           String        @id @default(uuid()) @db.Uuid
+  visitorId    String        @map("visitor_id") @db.Uuid
+  category     VisitCategory @default(visitor)
+  // Host and purpose apply to visitors only; attachees just give their department.
+  hostName     String?       @map("host_name")
+  department   String
+  purpose      String?
+  passNumber   String        @unique @map("pass_number")
+  status       VisitStatus
+  method       CheckInMethod
+  checkInAt    DateTime?     @map("check_in_at")
+  checkOutAt   DateTime?     @map("check_out_at")
+  flagged      Boolean       @default(false)
+  flagReason   String?       @map("flag_reason")
+  watchlistHit Boolean       @default(false) @map("watchlist_hit")
+  createdById  String?       @map("created_by_id") @db.Uuid
+  resolvedById String?       @map("resolved_by_id") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  visitor    Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  createdBy  Staff?  @relation("VisitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy Staff?  @relation("VisitResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([visitorId, status])
+  @@index([status, category])
+  @@index([createdAt])
+  @@map("visits")
+}
+
+model WatchlistEntry {
+  id                 String       @id @default(uuid()) @db.Uuid
+  documentType       DocumentType @map("document_type")
+  documentNumberHash String       @unique @map("document_number_hash")
+  documentLast4      String       @map("document_last4")
+  reason             String
+  addedById          String?      @map("added_by") @db.Uuid
+  createdAt          DateTime     @default(now()) @map("created_at")
+
+  addedBy Staff? @relation(fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@map("watchlist")
+}
+
+model Staff {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         StaffRole
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  auditLogs        AuditLog[]
+  watchlistEntries WatchlistEntry[]
+  visitsCreated    Visit[]          @relation("VisitCreatedBy")
+  visitsResolved   Visit[]          @relation("VisitResolvedBy")
+
+  @@map("staff")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  staffId   String?  @map("staff_id") @db.Uuid
+  action    String
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  staff Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Remembers a returning visitor's phone. Only the SHA-256 of the cookie value is stored.
+model DeviceToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  visitorId  String   @map("visitor_id") @db.Uuid
+  expiresAt  DateTime @map("expires_at")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([visitorId])
+  @@map("device_tokens")
+}
+
+model OtpCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  phone      String
+  codeHash   String    @map("code_hash")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([phone, createdAt])
+  @@map("otp_codes")
+}
