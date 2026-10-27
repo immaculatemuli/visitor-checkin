@@ -1,10 +1,16 @@
 import type { PSM, Worker } from 'tesseract.js';
+import { combineFrontReads, parseIdFront, type FrontField, type IdFront } from './idfront';
 import { extractMrzLines, parseMrz, voteMrzLines, type MrzResult } from './mrz';
 
 /**
- * In-browser MRZ OCR. Images never leave the device: frames are drawn to a canvas, read by
+ * In-browser ID OCR. Images never leave the device: photos are drawn to a canvas, read by
  * tesseract.js (WebAssembly), and only the parsed text is kept.
  */
+
+/** What a photo yielded: the printed front of a Kenyan ID, or the MRZ of an ID back or passport. */
+export type ScanResult = { kind: 'front'; front: IdFront; uncertain: FrontField[] } | { kind: 'mrz'; mrz: MrzResult };
+
+const MRZ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 
 let workerPromise: Promise<Worker> | null = null;
 
@@ -13,10 +19,7 @@ export function warmUpOcr(): Promise<Worker> {
   workerPromise ??= (async () => {
     const { createWorker } = await import('tesseract.js');
     const worker = await createWorker('eng');
-    await worker.setParameters({
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
-      user_defined_dpi: '300',
-    });
+    await worker.setParameters({ user_defined_dpi: '300' });
     return worker;
   })().catch((err) => {
     workerPromise = null;
@@ -25,13 +28,24 @@ export function warmUpOcr(): Promise<Worker> {
   return workerPromise;
 }
 
-/** The MRZ lines OCR finds in the canvas, or null if there is no MRZ in it. */
-async function recognizeMrzLines(canvas: HTMLCanvasElement, wholeImage: boolean): Promise<string[] | null> {
+/**
+ * OCR text of the canvas. `mrz` limits it to the MRZ alphabet, which reads the MRZ far better;
+ * the printed front needs every character.
+ */
+async function recognizeText(canvas: HTMLCanvasElement, { wholeImage, mrz }: { wholeImage: boolean; mrz: boolean }): Promise<string> {
   const worker = await warmUpOcr();
   // A whole photo has other text around the MRZ, so let tesseract find the text blocks itself.
-  await worker.setParameters({ tessedit_pageseg_mode: wholeImage ? PSM_AUTO : PSM_SINGLE_BLOCK });
+  await worker.setParameters({
+    tessedit_pageseg_mode: wholeImage ? PSM_AUTO : PSM_SINGLE_BLOCK,
+    tessedit_char_whitelist: mrz ? MRZ_CHARS : '',
+  });
   const { data } = await worker.recognize(canvas);
-  return extractMrzLines(data.text)?.lines ?? null;
+  return data.text;
+}
+
+/** The MRZ lines OCR finds in the canvas, or null if there is no MRZ in it. */
+async function recognizeMrzLines(canvas: HTMLCanvasElement, wholeImage: boolean): Promise<string[] | null> {
+  return extractMrzLines(await recognizeText(canvas, { wholeImage, mrz: true }))?.lines ?? null;
 }
 
 function tryParse(lines: string[]): MrzResult | null {
@@ -113,13 +127,78 @@ interface Attempt {
 }
 
 /**
+ * Reads an ID from a photo of either side, taken any way up. A first full read of the photo
+ * shows which side it is: the printed front is parsed from its labels; the back of an ID or a
+ * passport page goes to the MRZ reader.
+ */
+export async function readIdFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<ScanResult | null> {
+  const bitmap = await createImageBitmap(file);
+  const { width: W, height: H } = bitmap;
+  const full = { x: 0, y: 0, w: W, h: H };
+  // Upright first, then a high-contrast copy, then the other ways a photo can be turned.
+  const looks: Look[] = [
+    {},
+    { binarize: true },
+    ...(W >= H ? [2, 1, 3] : [1, 3, 2]).map((turns) => ({ turns: turns as Turns })),
+  ];
+  const readFront = (look: Look) =>
+    recognizeText(prepareCanvas(bitmap, full, { ...look, width: look.width ?? 1600 }), { wholeImage: true, mrz: false });
+  try {
+    for (const [i, look] of looks.entries()) {
+      onProgress?.((i / looks.length) * 0.5);
+      const text = await readFront(look);
+      const front = parseIdFront(text);
+      if (front) {
+        onProgress?.(0.6);
+        return { kind: 'front', ...(await confirmFront(front, look, readFront, () => onProgress?.(0.85))) };
+      }
+      // MRZ text means it's the back of the card or a passport page.
+      if (extractMrzLines(text)) break;
+    }
+    const mrz = await readMrz(bitmap, (f) => onProgress?.(0.5 + f / 2));
+    return mrz ? { kind: 'mrz', mrz } : null;
+  } finally {
+    bitmap.close();
+  }
+}
+
+interface Look {
+  turns?: Turns;
+  binarize?: boolean;
+  width?: number;
+}
+
+/**
+ * The front has no check digits, so one read is never trusted alone: the photo is read twice
+ * more the same way up with different processing. Fields the reads don't all agree on are
+ * returned as uncertain.
+ */
+async function confirmFront(
+  first: IdFront,
+  look: Look,
+  read: (look: Look) => Promise<string>,
+  onRead: () => void,
+): Promise<{ front: IdFront; uncertain: FrontField[] }> {
+  const reads = [first];
+  const others: Look[] = [
+    { ...look, binarize: !look.binarize },
+    { ...look, binarize: false, width: 2200 },
+  ];
+  for (const other of others) {
+    const again = parseIdFront(await read(other));
+    onRead();
+    if (again) reads.push(again);
+  }
+  return combineFrontReads(reads);
+}
+
+/**
  * Reads the MRZ from a photo taken any way up: the document may fill the frame or sit in the
  * middle of it, upright, sideways or upside down. Tries the likeliest layouts first and stops at
  * the first fully valid read. Otherwise the reads are combined character by character, since a
  * digit misread in one read is usually right in the others, and the best result is returned.
  */
-export async function readMrzFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<MrzResult | null> {
-  const bitmap = await createImageBitmap(file);
+async function readMrz(bitmap: ImageBitmap, onProgress?: (fraction: number) => void): Promise<MrzResult | null> {
   const { width: W, height: H } = bitmap;
   const full = { x: 0, y: 0, w: W, h: H };
   const bottom = { x: 0, y: H * 0.5, w: W, h: H * 0.5 };
@@ -152,29 +231,25 @@ export async function readMrzFromPhoto(file: File, onProgress?: (fraction: numbe
         ];
 
   const reads: string[][] = [];
-  try {
-    for (const [i, attempt] of attempts.entries()) {
-      onProgress?.(i / attempts.length);
-      const canvas = prepareCanvas(bitmap, attempt.crop, {
-        turns: attempt.turns,
-        tilt: attempt.tilt,
-        binarize: attempt.binarize,
-        width: attempt.whole ? 1400 : 1000,
-      });
-      const lines = await recognizeMrzLines(canvas, !!attempt.whole);
-      if (!lines) continue;
-      const result = tryParse(lines);
-      if (result?.valid) return result;
-      reads.push(lines);
-      // Once two reads of the same layout exist, a vote may already settle it.
-      const same = reads.filter((r) => r[0].length === lines[0].length);
-      if (same.length >= 2) {
-        const voted = tryParse(voteMrzLines(same));
-        if (voted?.valid) return voted;
-      }
+  for (const [i, attempt] of attempts.entries()) {
+    onProgress?.(i / attempts.length);
+    const canvas = prepareCanvas(bitmap, attempt.crop, {
+      turns: attempt.turns,
+      tilt: attempt.tilt,
+      binarize: attempt.binarize,
+      width: attempt.whole ? 1400 : 1000,
+    });
+    const lines = await recognizeMrzLines(canvas, !!attempt.whole);
+    if (!lines) continue;
+    const result = tryParse(lines);
+    if (result?.valid) return result;
+    reads.push(lines);
+    // Once two reads of the same layout exist, a vote may already settle it.
+    const same = reads.filter((r) => r[0].length === lines[0].length);
+    if (same.length >= 2) {
+      const voted = tryParse(voteMrzLines(same));
+      if (voted?.valid) return voted;
     }
-  } finally {
-    bitmap.close();
   }
 
   const candidates = reads.map(tryParse).filter((r): r is MrzResult => r !== null);

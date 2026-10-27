@@ -22,7 +22,7 @@ A web app for visitor check-in at the reception of the National Youth Service He
 | Visitor | Staff |
 |---|---|
 | Scans the reception QR poster, which opens `/checkin` | Signs in at `/admin/login` |
-| **First visit:** picks visitor or attachee, photographs the back of their ID (or passport), checks the pre-filled details, chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
+| **First visit:** picks visitor or attachee, photographs the front of their ID (or passport), checks the pre-filled details, chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
 | **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
 | Scans the QR again and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
@@ -213,7 +213,13 @@ On Railway, use build command `npm ci --include=dev && npm run build -w server` 
 
 ## Document scanning notes
 
-The MRZ parser ([client/src/lib/mrz.ts](client/src/lib/mrz.ts)) implements ICAO 9303 TD1 (3×30, ID cards) and TD3 (2×44, passports), including check-digit verification, date-century handling, long-document-number overflow and OCR error correction (`O→0` in numeric fields, `0→O` in names, and so on).
+Visitors photograph the **front** of their ID; a photo of the back, or of a passport page, also works. [`readIdFromPhoto()`](client/src/lib/ocr.ts) first reads the whole photo (turning it if needed) to see which side it is.
+
+**Front of a Kenyan ID.** The parser ([client/src/lib/idfront.ts](client/src/lib/idfront.ts)) finds the values by their printed labels, so it handles both the older ID (`SERIAL NUMBER`, `ID NUMBER`, `FULL NAMES`, `DATE OF BIRTH`) and the Maisha card (`SURNAME`, `GIVEN NAMES`, `ID NUMBER`, `DATE OF BIRTH`). It never takes the serial number for the ID number. The front has no check digits, so the photo is read three times with different processing and combined field by field. Any field the reads don't all agree on is highlighted on the confirm screen for the visitor to check.
+
+> ⚠️ The label layouts were built from the card designs, and the tests use synthetic card images. Before go-live, try several real Maisha cards and old IDs. If a label is printed differently, add it to the patterns at the top of `idfront.ts`.
+
+**Back of an ID, or a passport.** The MRZ parser ([client/src/lib/mrz.ts](client/src/lib/mrz.ts)) implements ICAO 9303 TD1 (3×30, ID cards) and TD3 (2×44, passports), including check-digit verification, date-century handling, long-document-number overflow and OCR error correction (`O→0` in numeric fields, `0→O` in names, and so on).
 
 It is hand-written rather than taken from a library because Kenyan IDs need special handling. The older Kenyan ID uses the non-standard country code `KYA`. On Kenyan cards, the **national ID number** sits in the optional-data field, separate from the card serial number. The parser picks the first run of 6–10 digits from the optional data, falling back to the document number.
 

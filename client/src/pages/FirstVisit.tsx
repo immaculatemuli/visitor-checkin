@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, ApiError, errorMessage, type DocumentType, type VisitCategory } from '../lib/api';
 import { isExpired, type MrzResult } from '../lib/mrz';
-import { warmUpOcr } from '../lib/ocr';
+import { warmUpOcr, type ScanResult } from '../lib/ocr';
 import { todayIso } from '../lib/format';
 import { useConfig } from '../lib/hooks';
 import { ConsentNotice } from '../components/ConsentNotice';
@@ -59,7 +59,8 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
   const [step, setStep] = useState<Step>('scan');
   const [doc, setDoc] = useState<DocumentValues>(emptyDocument('national_id'));
   const [visit, setVisit] = useState<VisitValues>(emptyVisit(category));
-  const [scanned, setScanned] = useState<'ok' | 'check' | null>(null);
+  // How the details were filled in: a fully verified MRZ, an MRZ with failed checks, or the front.
+  const [scanned, setScanned] = useState<'ok' | 'check' | 'front' | null>(null);
   const [showNotice, setShowNotice] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -73,12 +74,23 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
 
   const stepInfo = { current: STEPS.indexOf(step) + 1, total: STEPS.length };
 
-  function handleScan(mrz: MrzResult) {
-    // A passport is recognised from its MRZ, so there's no need to ask which document it is.
-    const scannedType: DocumentType = mrz.format === 'TD3' ? 'passport' : 'national_id';
-    setDoc(fromMrz(mrz, scannedType));
-    setScanned(mrz.valid ? 'ok' : 'check');
-    setErrors(uncertainFields(mrz, scannedType));
+  function handleScan(result: ScanResult) {
+    if (result.kind === 'front') {
+      // The printed front has no check digits, so the visitor is asked to look the details over.
+      const { fullName, idNumber, dateOfBirth } = result.front;
+      setDoc({ ...emptyDocument('national_id'), fullName, documentNumber: idNumber, dob: dateOfBirth ?? '' });
+      const field = { fullName: 'fullName', idNumber: 'documentNumber', dateOfBirth: 'dob' } as const;
+      const hint = 'This may have been misread. Check it against your ID.';
+      setErrors(Object.fromEntries(result.uncertain.map((f) => [field[f], hint])));
+      setScanned(result.uncertain.length ? 'check' : 'front');
+    } else {
+      // A passport is recognised from its MRZ, so there's no need to ask which document it is.
+      const { mrz } = result;
+      const scannedType: DocumentType = mrz.format === 'TD3' ? 'passport' : 'national_id';
+      setDoc(fromMrz(mrz, scannedType));
+      setScanned(mrz.valid ? 'ok' : 'check');
+      setErrors(uncertainFields(mrz, scannedType));
+    }
     setStep('details');
   }
 
@@ -144,6 +156,7 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
 
       <div className="space-y-4">
         {scanned === 'check' && <Alert tone="warning">Please check the highlighted details against your document.</Alert>}
+        {scanned === 'front' && <Alert tone="info">Please check your name, ID number and date of birth match your ID.</Alert>}
         {passportExpired && (
           <Alert tone="error" title="This passport has expired">
             We can't accept an expired passport. Please see the reception desk.

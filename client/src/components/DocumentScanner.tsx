@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DocumentType } from '../lib/api';
-import type { MrzResult } from '../lib/mrz';
-import { readMrzFromPhoto, warmUpOcr } from '../lib/ocr';
+import { readIdFromPhoto, warmUpOcr, type ScanResult } from '../lib/ocr';
 import { IconCamera, IconKeyboard } from './icons';
 import { Alert, Button, Spinner } from './ui';
 
 // ID-1 cards are 85.6 x 54mm with 3 MRZ lines; a passport data page is about 125 x 88mm with 2.
 const GUIDE: Record<DocumentType, { ratio: number; lines: number; label: string; what: string }> = {
-  national_id: { ratio: 1.586, lines: 3, label: 'Scan the back of your ID', what: 'the back of your ID card' },
+  national_id: { ratio: 1.586, lines: 3, label: 'Scan your ID', what: 'the front of your ID card' },
   passport: { ratio: 1.42, lines: 2, label: 'Scan your passport', what: 'your passport photo page' },
 };
 
 /**
  * One-tap scan: opens the phone's own camera (sharper and better focused than a live video
- * feed), then reads the MRZ from the photo on the device. The photo is never uploaded.
+ * feed), then reads the ID from the photo on the device. The photo is never uploaded.
  */
 export function DocumentScanner({
   documentType,
@@ -21,7 +20,7 @@ export function DocumentScanner({
   onManual,
 }: {
   documentType: DocumentType;
-  onResult: (result: MrzResult) => void;
+  onResult: (result: ScanResult) => void;
   onManual: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -44,7 +43,7 @@ export function DocumentScanner({
     setProgress(0);
     setPreview(URL.createObjectURL(file));
     try {
-      const result = await readMrzFromPhoto(file, setProgress);
+      const result = await readIdFromPhoto(file, setProgress);
       if (result) {
         navigator.vibrate?.(60);
         onResult(result);
@@ -95,15 +94,25 @@ export function DocumentScanner({
         aria-label={`Open camera to photograph ${guide.what}`}
       >
         <div className="mx-auto w-4/5 rounded-xl border-2 border-dashed border-slate-300 bg-white p-3" style={{ aspectRatio: String(guide.ratio) }}>
-          <div className="flex h-full flex-col justify-end gap-1">
-            {Array.from({ length: guide.lines }).map((_, i) => (
-              <div key={i} className="h-1.5 rounded-full bg-brand-200" />
-            ))}
-          </div>
+          {documentType === 'national_id' ? (
+            // Front of the card: photo on one side, printed details on the other.
+            <div className="flex h-full gap-3">
+              <div className="aspect-[3/4] h-full rounded-md bg-brand-100" />
+              <div className="flex flex-1 flex-col justify-center gap-2">
+                {[90, 70, 80, 55].map((w) => (
+                  <div key={w} className="h-1.5 rounded-full bg-brand-200" style={{ width: `${w}%` }} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full flex-col justify-end gap-1">
+              {Array.from({ length: guide.lines }).map((_, i) => (
+                <div key={i} className="h-1.5 rounded-full bg-brand-200" />
+              ))}
+            </div>
+          )}
         </div>
-        <p className="mt-4 text-sm text-slate-600">
-          Make sure the lines of <span className="font-mono">&lt;&lt;&lt;</span> are sharp and free of glare.
-        </p>
+        <p className="mt-4 text-sm text-slate-600">Fill the photo with the card, in good light and with no glare.</p>
       </button>
 
       {failed && (
