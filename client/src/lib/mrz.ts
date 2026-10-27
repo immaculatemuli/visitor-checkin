@@ -56,7 +56,7 @@ function verify(field: string, digit: string): boolean {
 }
 
 // OCR commonly confuses these in fields that can only contain digits.
-const TO_DIGIT: Record<string, string> = { O: '0', Q: '0', D: '0', U: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6', T: '7' };
+const TO_DIGIT: Record<string, string> = { O: '0', Q: '0', D: '0', U: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6', T: '7', A: '4' };
 // ...and these in fields that can only contain letters.
 const TO_LETTER: Record<string, string> = { '0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B', '6': 'G' };
 
@@ -88,12 +88,12 @@ export function parseMrzDate(yymmdd: string, kind: 'birth' | 'expiry', now = new
   return date.toISOString().slice(0, 10);
 }
 
-// OCR often reads runs of '<' filler as L or K; no real name part is made only of those.
+// OCR often reads runs of '<' filler as L or K; no real name part is made only of those, and a
+// lone K or L at the very end is filler that came just before the trailing '<<<'.
 function dropFillerWords(s: string): string {
-  return s
-    .split(' ')
-    .filter((w) => !/^[LK]{3,}$/.test(w))
-    .join(' ');
+  const words = s.split(' ').filter((w) => !/^[LK]{3,}$/.test(w));
+  while (words.length > 1 && /^[LK]$/.test(words[words.length - 1])) words.pop();
+  return words.join(' ');
 }
 
 function parseNames(field: string): { surname: string; givenNames: string } {
@@ -230,6 +230,31 @@ function fitLength(line: string, length: number): string {
  * Pulls MRZ lines out of noisy OCR text. Tolerates a few missing or extra characters per line,
  * which tesseract commonly produces around the edges.
  */
+/** Optional-data zones hold no names, so a lone K or L between fillers is a misread '<'. */
+function cleanFiller(zone: string): string {
+  return zone.replace(/(?<=<)[KL](?=<)/g, '<');
+}
+
+/**
+ * TD1 line 2 is 18 fixed characters (birth date, sex, expiry, nationality), 11 of optional data
+ * and the composite check digit last. OCR often adds, drops or misreads '<' in that filler,
+ * which would push the check digit out of place. When the optional zone is only filler-like
+ * characters, keep the head and the final check digit and refit the filler between them.
+ */
+function fitTd1Line2(line: string): string {
+  const middle = line.slice(18, -1);
+  if (/^[<KLE]*$/.test(middle) && (middle.match(/</g)?.length ?? 0) >= 6) {
+    return line.slice(0, 18) + '<'.repeat(11) + line.slice(-1);
+  }
+  const fitted = fitLength(line, 30);
+  return fitted.slice(0, 18) + cleanFiller(fitted.slice(18));
+}
+
+function fitTd1Line1(line: string): string {
+  const fitted = fitLength(line, 30);
+  return fitted.slice(0, 15) + cleanFiller(fitted.slice(15));
+}
+
 export function extractMrzLines(text: string): { format: MrzFormat; lines: string[] } | null {
   const candidates = text
     .split(/\r?\n/)
@@ -247,7 +272,7 @@ export function extractMrzLines(text: string): { format: MrzFormat; lines: strin
   for (let i = 0; i < candidates.length - 2; i++) {
     const group = candidates.slice(i, i + 3);
     if (/^[IAC]/.test(group[0]) && group.every((l) => l.length >= 26 && l.length <= 34)) {
-      return { format: 'TD1', lines: group.map((l) => fitLength(l, 30)) };
+      return { format: 'TD1', lines: [fitTd1Line1(group[0]), fitTd1Line2(group[1]), fitLength(group[2], 30)] };
     }
   }
   return null;
@@ -265,6 +290,26 @@ export function parseMrz(lines: string[], now = new Date()): MrzResult {
 export function parseMrzFromText(text: string, now = new Date()): MrzResult | null {
   const found = extractMrzLines(text);
   return found ? parseMrz(found.lines, now) : null;
+}
+
+/**
+ * Combines several OCR reads of the same MRZ (same format) character by character: each
+ * position takes the character most reads agree on, with ties going to the earliest read.
+ * A digit misread in one read is usually outvoted by the others.
+ */
+export function voteMrzLines(reads: string[][]): string[] {
+  return reads[0].map((line, row) =>
+    Array.from(line, (_, col) => {
+      const counts = new Map<string, number>();
+      for (const read of reads) {
+        const c = read[row]?.[col];
+        if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+      }
+      let best = line[col];
+      for (const [c, n] of counts) if (n > (counts.get(best) ?? 0)) best = c;
+      return best;
+    }).join(''),
+  );
 }
 
 export function isExpired(expiryDate: string | null, now = new Date()): boolean {

@@ -34,6 +34,24 @@ function fromMrz(mrz: MrzResult, documentType: DocumentType): DocumentValues {
   };
 }
 
+/**
+ * Fields whose check digit failed, so the visitor compares just those with the card. On a
+ * Kenyan ID the national ID number sits in the optional data, which only the composite check
+ * covers.
+ */
+function uncertainFields(mrz: MrzResult, documentType: DocumentType): Record<string, string> {
+  const hint = 'This may have been misread. Check it against your document.';
+  const e: Record<string, string> = {};
+  const numberOk =
+    documentType === 'passport'
+      ? mrz.checks.documentNumber
+      : mrz.checks.composite || (mrz.idNumber === mrz.documentNumber && mrz.checks.documentNumber);
+  if (!numberOk) e.documentNumber = hint;
+  if (!mrz.checks.dateOfBirth) e.dob = hint;
+  if (documentType === 'passport' && !mrz.checks.expiryDate) e.documentExpiry = hint;
+  return e;
+}
+
 /** First visit: photograph the ID, check the filled-in details, choose a department, check in. */
 export function FirstVisit({ category, onExit }: { category: VisitCategory; onExit: () => void }) {
   const navigate = useNavigate();
@@ -60,6 +78,7 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
     const scannedType: DocumentType = mrz.format === 'TD3' ? 'passport' : 'national_id';
     setDoc(fromMrz(mrz, scannedType));
     setScanned(mrz.valid ? 'ok' : 'check');
+    setErrors(uncertainFields(mrz, scannedType));
     setStep('details');
   }
 
@@ -124,7 +143,7 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
       <PageTitle title="Confirm your details" subtitle={scanned ? 'We filled these in from your ID. Check them and choose your department.' : undefined} />
 
       <div className="space-y-4">
-        {scanned === 'check' && <Alert tone="warning">Some details may have been misread. Please check each one carefully.</Alert>}
+        {scanned === 'check' && <Alert tone="warning">Please check the highlighted details against your document.</Alert>}
         {passportExpired && (
           <Alert tone="error" title="This passport has expired">
             We can't accept an expired passport. Please see the reception desk.

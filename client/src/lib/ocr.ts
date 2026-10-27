@@ -1,5 +1,5 @@
 import type { PSM, Worker } from 'tesseract.js';
-import { parseMrzFromText, type MrzResult } from './mrz';
+import { extractMrzLines, parseMrz, voteMrzLines, type MrzResult } from './mrz';
 
 /**
  * In-browser MRZ OCR. Images never leave the device: frames are drawn to a canvas, read by
@@ -25,12 +25,21 @@ export function warmUpOcr(): Promise<Worker> {
   return workerPromise;
 }
 
-export async function recognizeMrz(canvas: HTMLCanvasElement, wholeImage = false): Promise<MrzResult | null> {
+/** The MRZ lines OCR finds in the canvas, or null if there is no MRZ in it. */
+async function recognizeMrzLines(canvas: HTMLCanvasElement, wholeImage: boolean): Promise<string[] | null> {
   const worker = await warmUpOcr();
   // A whole photo has other text around the MRZ, so let tesseract find the text blocks itself.
   await worker.setParameters({ tessedit_pageseg_mode: wholeImage ? PSM_AUTO : PSM_SINGLE_BLOCK });
   const { data } = await worker.recognize(canvas);
-  return parseMrzFromText(data.text);
+  return extractMrzLines(data.text)?.lines ?? null;
+}
+
+function tryParse(lines: string[]): MrzResult | null {
+  try {
+    return parseMrz(lines);
+  } catch {
+    return null;
+  }
 }
 
 // Numeric values of tesseract's PSM enum, so the main bundle doesn't import tesseract.js eagerly.
@@ -54,7 +63,7 @@ export type Turns = 0 | 1 | 2 | 3;
 export function prepareCanvas(
   source: CanvasImageSource,
   crop: Crop,
-  options: { binarize?: boolean; turns?: Turns; width?: number } = {},
+  options: { binarize?: boolean; turns?: Turns; tilt?: number; width?: number } = {},
 ): HTMLCanvasElement {
   const turns = options.turns ?? 0;
   const sideways = turns % 2 === 1;
@@ -66,7 +75,8 @@ export function prepareCanvas(
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.translate(w / 2, h / 2);
-  ctx.rotate((turns * Math.PI) / 2);
+  // `tilt` straightens a document held a few degrees off level; OCR struggles with slanted lines.
+  ctx.rotate((turns * Math.PI) / 2 + ((options.tilt ?? 0) * Math.PI) / 180);
   const [dw, dh] = [crop.w * scale, crop.h * scale];
   ctx.drawImage(source, crop.x, crop.y, crop.w, crop.h, -dw / 2, -dh / 2, dw, dh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -99,12 +109,14 @@ interface Attempt {
   turns?: Turns;
   binarize?: boolean;
   whole?: boolean;
+  tilt?: number;
 }
 
 /**
  * Reads the MRZ from a photo taken any way up: the document may fill the frame or sit in the
  * middle of it, upright, sideways or upside down. Tries the likeliest layouts first and stops at
- * the first fully valid read.
+ * the first fully valid read. Otherwise the reads are combined character by character, since a
+ * digit misread in one read is usually right in the others, and the best result is returned.
  */
 export async function readMrzFromPhoto(file: File, onProgress?: (fraction: number) => void): Promise<MrzResult | null> {
   const bitmap = await createImageBitmap(file);
@@ -126,6 +138,8 @@ export async function readMrzFromPhoto(file: File, onProgress?: (fraction: numbe
           { crop: top, turns: 2 },
           { crop: full, whole: true, turns: 1 },
           { crop: full, whole: true, turns: 3 },
+          { crop: full, whole: true, tilt: -5 },
+          { crop: full, whole: true, tilt: 5 },
         ]
       : [
           { crop: full, whole: true },
@@ -133,25 +147,45 @@ export async function readMrzFromPhoto(file: File, onProgress?: (fraction: numbe
           { crop: left, turns: 3 },
           { crop: full, whole: true, binarize: true },
           { crop: full, whole: true, turns: 2 },
+          { crop: full, whole: true, tilt: -5 },
+          { crop: full, whole: true, tilt: 5 },
         ];
 
-  let best: MrzResult | null = null;
+  const reads: string[][] = [];
   try {
     for (const [i, attempt] of attempts.entries()) {
       onProgress?.(i / attempts.length);
       const canvas = prepareCanvas(bitmap, attempt.crop, {
         turns: attempt.turns,
+        tilt: attempt.tilt,
         binarize: attempt.binarize,
         width: attempt.whole ? 1400 : 1000,
       });
-      const result = await recognizeMrz(canvas, attempt.whole);
+      const lines = await recognizeMrzLines(canvas, !!attempt.whole);
+      if (!lines) continue;
+      const result = tryParse(lines);
       if (result?.valid) return result;
-      if (result && (!best || score(result) > score(best))) best = result;
+      reads.push(lines);
+      // Once two reads of the same layout exist, a vote may already settle it.
+      const same = reads.filter((r) => r[0].length === lines[0].length);
+      if (same.length >= 2) {
+        const voted = tryParse(voteMrzLines(same));
+        if (voted?.valid) return voted;
+      }
     }
-    return best;
   } finally {
     bitmap.close();
   }
+
+  const candidates = reads.map(tryParse).filter((r): r is MrzResult => r !== null);
+  for (const length of [30, 44]) {
+    const same = reads.filter((r) => r[0].length === length);
+    if (same.length >= 2) {
+      const voted = tryParse(voteMrzLines(same));
+      if (voted) candidates.push(voted);
+    }
+  }
+  return candidates.sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 /** How many check digits passed, to keep the best of several partial reads. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDigit, extractMrzLines, isExpired, parseMrz, parseMrzDate, parseMrzFromText } from './mrz';
+import { checkDigit, extractMrzLines, isExpired, parseMrz, parseMrzDate, parseMrzFromText, voteMrzLines } from './mrz';
 
 const NOW = new Date('2026-10-27T09:00:00Z');
 
@@ -178,6 +178,23 @@ describe('reading MRZ from OCR output', () => {
   it('keeps real names that contain L or K', () => {
     const lines = [MAISHA_CARD[0], MAISHA_CARD[1], 'KILEL<<WILLIAM<KIPLAGAT<<<<<<<'];
     expect(parseMrz(lines, NOW).fullName).toBe('William Kiplagat Kilel');
+  });
+
+  it('repairs filler that OCR misread, added or dropped so the check digits still line up', () => {
+    // Real reads from the test photos: '<' read as K, an extra filler, and the final 4 read as A.
+    const ocr = ['IDKENA000123453<<12345678<K<<<', '9001158F3301155KEN<K<<<<<<<<<<A', 'WANJIKU<<GRACE<AKINYI<<<<<<<L<LL'].join('\n');
+    expect(parseMrzFromText(ocr, NOW)).toMatchObject({ valid: true, idNumber: '12345678', fullName: 'Grace Akinyi Wanjiku' });
+    const short = ['IDKENA000123453<<12345678<<<<<', '9001158F3301155KEN<<<<<<<<4', 'WANJIKU<<GRACE<AKINYI<<<<<<<<<'].join('\n');
+    expect(parseMrzFromText(short, NOW)?.valid).toBe(true);
+  });
+
+  it('outvotes a digit misread in one of several reads', () => {
+    const misreadId = [MAISHA_CARD[0].replace('12345678', '12346678'), MAISHA_CARD[1], MAISHA_CARD[2]];
+    const misreadDob = [MAISHA_CARD[0], MAISHA_CARD[1].replace('900115', '980115'), MAISHA_CARD[2]];
+    expect(parseMrz(misreadId, NOW).valid).toBe(false);
+    const voted = voteMrzLines([misreadId, MAISHA_CARD, misreadDob]);
+    expect(voted).toEqual(MAISHA_CARD);
+    expect(parseMrz(voted, NOW)).toMatchObject({ valid: true, idNumber: '12345678', dateOfBirth: '1990-01-15' });
   });
 
   it('returns null when there is no MRZ', () => {
