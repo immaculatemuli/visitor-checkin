@@ -6,6 +6,7 @@ import { prisma } from '../src/db';
 import { CONSENT_VERSION } from '../src/config/constants';
 import { hashDocument } from '../src/lib/crypto';
 import { flagOverdueVisits } from '../src/jobs';
+import { networkOf, normalizeIp } from '../src/lib/network';
 
 const app = createApp();
 const AJAX = { 'X-Requested-With': 'fetch' };
@@ -35,7 +36,7 @@ const passport = {
 
 async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE visits, visitors, watchlist, audit_logs, device_tokens, otp_codes, staff RESTART IDENTITY CASCADE',
+    'TRUNCATE visits, visitors, watchlist, audit_logs, device_tokens, otp_codes, office_networks, staff RESTART IDENTITY CASCADE',
   );
 }
 
@@ -365,5 +366,78 @@ describe('end of day', () => {
     const visit = await prisma.visit.findFirstOrThrow();
     expect(visit).toMatchObject({ flagged: true, status: 'CHECKED_IN' });
     expect(await flagOverdueVisits(tomorrow)).toBe(0);
+  });
+});
+
+describe('office Wi-Fi', () => {
+  const OFFICE = { 'X-Forwarded-For': '41.90.10.20' };
+  const HOME = { 'X-Forwarded-For': '102.68.5.6' };
+  const attachee = { ...nationalId, category: 'attachee', hostName: undefined, purpose: undefined };
+
+  async function addOfficeNetwork() {
+    const admin = await staffAgent('admin');
+    const res = await admin.post('/api/admin/networks').set(AJAX).set(OFFICE).send({ label: 'HQ Wi-Fi' }).expect(201);
+    expect(res.body.network).toBe('41.90.10.20');
+    return admin;
+  }
+
+  it('works out the network of IPv4 and IPv6 addresses', () => {
+    expect(normalizeIp('::ffff:41.90.10.20')).toBe('41.90.10.20');
+    expect(networkOf('41.90.10.20')).toBe('41.90.10.20');
+    expect(networkOf('2c0f:fe38:2::abcd:1')).toBe('2c0f:fe38:2:0::/64');
+    expect(networkOf('2c0f:fe38:0002:0000:1111:2222:3333:4444')).toBe('2c0f:fe38:2:0::/64');
+  });
+
+  it('restricts nothing until an office network is added', async () => {
+    await request(app).post('/api/public/checkin').set(AJAX).set(HOME).send(attachee).expect(201);
+  });
+
+  it('refuses an attachee checking in from outside the office, and records the attempt', async () => {
+    await addOfficeNetwork();
+    const res = await request(app).post('/api/public/checkin').set(AJAX).set(HOME).send(attachee).expect(403);
+    expect(res.body).toMatchObject({ code: 'OFF_SITE' });
+    expect(await prisma.visit.count()).toBe(0);
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'OFFSITE_CHECKIN_BLOCKED' } });
+    expect(log.details).toMatchObject({ name: 'Grace Akinyi Wanjiku', category: 'attachee', network: '102.68.5.6' });
+
+    await request(app).post('/api/public/checkin').set(AJAX).set(OFFICE).send(attachee).expect(201);
+  });
+
+  it('refuses a returning attachee off site but lets them check out from anywhere', async () => {
+    const phone = request.agent(app);
+    await phone.post('/api/public/checkin').set(AJAX).set(HOME).send(attachee).expect(201);
+    await addOfficeNetwork();
+    await phone.post('/api/public/checkout').set(AJAX).set(HOME).expect(200);
+    await phone.post('/api/public/checkin/returning').set(AJAX).set(HOME).send({ category: 'attachee', department: 'ICT' }).expect(403);
+    await phone.post('/api/public/checkin/returning').set(AJAX).set(OFFICE).send({ category: 'attachee', department: 'ICT' }).expect(201);
+  });
+
+  it('tells the check-in screen up front whether the phone is on the office Wi-Fi', async () => {
+    const before = await request(app).get('/api/public/onsite?category=attachee').set(HOME).expect(200);
+    expect(before.body).toMatchObject({ required: false, onSite: true });
+    await addOfficeNetwork();
+    const home = await request(app).get('/api/public/onsite?category=attachee').set(HOME).expect(200);
+    expect(home.body).toMatchObject({ required: true, onSite: false, network: '102.68.5.6' });
+    const office = await request(app).get('/api/public/onsite?category=attachee').set(OFFICE).expect(200);
+    expect(office.body).toMatchObject({ required: true, onSite: true });
+    const visitor = await request(app).get('/api/public/onsite?category=visitor').set(HOME).expect(200);
+    expect(visitor.body.required).toBe(false);
+  });
+
+  it('still lets visitors check in on mobile data by default', async () => {
+    await addOfficeNetwork();
+    await request(app).post('/api/public/checkin').set(AJAX).set(HOME).send(nationalId).expect(201);
+  });
+
+  it('shows staff whether they are on a recognised network, and only admins can add one', async () => {
+    const admin = await addOfficeNetwork();
+    const here = await admin.get('/api/admin/networks').set(OFFICE).expect(200);
+    expect(here.body).toMatchObject({ policy: 'attachee', current: { network: '41.90.10.20', recognised: true } });
+    const away = await admin.get('/api/admin/networks').set(HOME).expect(200);
+    expect(away.body.current.recognised).toBe(false);
+    await admin.post('/api/admin/networks').set(AJAX).set(OFFICE).send({ label: 'Again' }).expect(409);
+
+    const security = await staffAgent('security');
+    await security.post('/api/admin/networks').set(AJAX).set(HOME).send({ label: 'Home' }).expect(403);
   });
 });

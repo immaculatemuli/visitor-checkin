@@ -122,6 +122,7 @@ In development, SMS codes are printed to the API console (`SMS_PROVIDER=console`
 | `END_OF_DAY_TIME` | | `18:00` | Open visits after this time get flagged |
 | `RETENTION_MONTHS` | | `12` | Closed visits and inactive visitors older than this are deleted |
 | `AUDIT_RETENTION_MONTHS` | | `24` | |
+| `ONSITE_CHECKIN` | | `attachee` | Who must be on the office Wi-Fi to self check-in: `attachee`, `all` or `off`. Applies once an office network is added under **Office Wi-Fi** in the dashboard |
 | `ENABLE_JOBS` | | `true` | Run the hourly flagging and nightly purge jobs in-process |
 | `SMS_PROVIDER` | | `console` | `console` or `africastalking` |
 | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` | with `africastalking` | | Africa's Talking credentials. Use `sandbox` as the username for testing |
@@ -197,6 +198,16 @@ On Railway, use build command `npm ci --include=dev && npm run build -w server` 
 - [ ] Use a custom domain with HTTPS. Set `CLIENT_ORIGIN` and `VITE_PUBLIC_URL` to it
 - [ ] Turn on automated Postgres backups
 - [ ] Test scanning with real Maisha cards, old IDs and passports (see below)
+
+## On-site check-in (office Wi-Fi)
+
+So nobody can check in from home, self check-in can be limited to the office Wi-Fi. Every phone on the office Wi-Fi reaches the internet through the office's public address (for IPv6, its /64 network), and the API refuses check-ins from any other address.
+
+1. Connect a laptop or phone to the NYS office Wi-Fi (not mobile data or a hotspot).
+2. Sign in to the dashboard as an admin, open **Office Wi-Fi** and press **Add the network I'm on now**. Repeat for each internet line the office uses.
+3. From then on, attachees (or everyone, with `ONSITE_CHECKIN=all`) must be on one of those networks to check in. Check-out works from anywhere. Staff manual check-ins are not restricted.
+
+Until a network is added nothing is restricted, and the Live page shows a reminder. Blocked attempts are recorded in the audit log as `OFFSITE_CHECKIN_BLOCKED` with the person's name. This depends on `TRUST_PROXY` being right, since the client address comes from the proxy headers.
 
 ## Security and privacy
 

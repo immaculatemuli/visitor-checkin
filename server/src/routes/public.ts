@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
+import type { VisitCategory } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { env } from '../env';
@@ -10,8 +11,10 @@ import {
   OTP_TTL_MINUTES,
   OTP_WINDOW_MINUTES,
 } from '../config/constants';
+import { audit } from '../lib/audit';
 import { hashOtp, randomDigits, safeEqualHex } from '../lib/crypto';
 import { HttpError } from '../lib/http';
+import { officeNetworkStatus } from '../lib/network';
 import { sendSms } from '../lib/sms';
 import { checkInLimiter, otpLimiter } from '../middleware/security';
 import { newCheckInSchema, phoneSchema, visitDetailsSchema } from '../schemas';
@@ -28,6 +31,27 @@ publicRouter.get('/config', (_req, res) => {
     retentionMonths: env.RETENTION_MONTHS,
     dpoContact: env.DPO_CONTACT,
   });
+});
+
+/**
+ * Refuses a self check-in from outside the office Wi-Fi when this category must be on site, and
+ * records the attempt in the audit log so staff can see who tried.
+ */
+async function requireOnSite(req: Request, category: VisitCategory, who: string): Promise<void> {
+  if (env.ONSITE_CHECKIN === 'off' || (env.ONSITE_CHECKIN === 'attachee' && category !== 'attachee')) return;
+  const status = await officeNetworkStatus(req.ip);
+  if (status.onSite) return;
+  await audit(req, 'OFFSITE_CHECKIN_BLOCKED', { name: who, category, network: status.network });
+  throw new HttpError(403, 'Check-in only works on the NYS Wi-Fi. Connect to the office Wi-Fi and try again.', { code: 'OFF_SITE' });
+}
+
+/** Lets the check-in screen warn up front when this phone isn't on the office Wi-Fi. */
+publicRouter.get('/onsite', async (req, res) => {
+  const category = z.enum(['visitor', 'attachee']).default('attachee').parse(req.query.category);
+  const policy = env.ONSITE_CHECKIN;
+  const status = await officeNetworkStatus(req.ip);
+  const required = status.configured && (policy === 'all' || (policy === 'attachee' && category === 'attachee'));
+  res.json({ required, onSite: status.onSite, network: status.network });
 });
 
 async function requireVisitor(req: Parameters<typeof visitorFromDevice>[0]) {
@@ -63,6 +87,7 @@ publicRouter.get('/me', async (req, res) => {
 
 publicRouter.post('/checkin', checkInLimiter, async (req, res) => {
   const input = newCheckInSchema.parse(req.body);
+  await requireOnSite(req, input.category, input.fullName);
   const visitor = await upsertVisitor(input);
   const { visit } = await startVisit(visitor.id, input, 'SELF');
   await issueDeviceToken(res, visitor.id);
@@ -72,6 +97,7 @@ publicRouter.post('/checkin', checkInLimiter, async (req, res) => {
 publicRouter.post('/checkin/returning', checkInLimiter, async (req, res) => {
   const visitor = await requireVisitor(req);
   const details = visitDetailsSchema.parse(req.body);
+  await requireOnSite(req, details.category, visitor.fullName);
   const { visit } = await startVisit(visitor.id, details, 'RETURNING');
   res.status(visit.status === 'PENDING_APPROVAL' ? 202 : 201).json({ visit: toPublicVisit(visit, visitor) });
 });

@@ -27,6 +27,8 @@ const schema = z.object({
   RETENTION_MONTHS: z.coerce.number().int().min(1).default(12),
   AUDIT_RETENTION_MONTHS: z.coerce.number().int().min(1).default(24),
   ENABLE_JOBS: bool.default(true),
+  // Who must be on the office Wi-Fi to check in (once an office network is added in the dashboard).
+  ONSITE_CHECKIN: z.enum(['attachee', 'all', 'off']).default('attachee'),
   SMS_PROVIDER: z.enum(['console', 'africastalking']).default('console'),
   AT_USERNAME: z.string().optional(),
   AT_API_KEY: z.string().optional(),

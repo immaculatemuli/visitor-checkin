@@ -6,6 +6,7 @@ import { useApi, useConfig } from '../lib/hooks';
 import { IconAttachee, IconVisitor } from '../components/icons';
 import { emptyVisit, missingFields, VisitFields, visitPayload, type VisitValues } from '../components/VisitorFields';
 import { Alert, Button, ChoiceButton, cx, FullPageSpinner, PageTitle, StatusBadge, VisitorShell } from '../components/ui';
+import { OffSiteWarning } from '../components/OffSiteWarning';
 import { FirstVisit } from './FirstVisit';
 
 interface Me {
@@ -162,6 +163,7 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
         </div>
       )}
 
+      <OffSiteWarning category={visit.category} />
       {error && <div className="mb-4"><Alert tone="error">{error}</Alert></div>}
 
       {!editing && visit.department ? (

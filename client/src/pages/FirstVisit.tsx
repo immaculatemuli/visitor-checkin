@@ -8,6 +8,7 @@ import { useConfig } from '../lib/hooks';
 import { ConsentNotice } from '../components/ConsentNotice';
 import { DocumentScanner } from '../components/DocumentScanner';
 import { IconCamera } from '../components/icons';
+import { OffSiteWarning } from '../components/OffSiteWarning';
 import {
   DocumentFields,
   documentPayload,
@@ -146,6 +147,8 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
         title={scanned ? 'Confirm your details' : 'Your details'}
         subtitle={scanned ? 'We filled these in from your ID. Check them and choose your department.' : 'Type them as they appear on your ID.'}
       />
+
+      <OffSiteWarning category={category} />
 
       {!scanned && (
         <button

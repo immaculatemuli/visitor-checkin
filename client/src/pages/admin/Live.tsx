@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, errorMessage, type StaffVisit } from '../../lib/api';
 import { DOC_LABEL, formatTime } from '../../lib/format';
 import { useApi, useInterval } from '../../lib/hooks';
 import { Alert, Button, Card, cx, Input, Tag } from '../../components/ui';
+import type { NetworksResponse } from './OfficeWifi';
 
 interface Stats {
   visitorsInside: number;
@@ -19,6 +20,7 @@ export default function Live() {
   const navigate = useNavigate();
   const live = useApi<{ pending: StaffVisit[]; inside: StaffVisit[] }>('/admin/visits/live');
   const stats = useApi<Stats>('/admin/visits/stats');
+  const networks = useApi<NetworksResponse>('/admin/networks');
   const [passLookup, setPassLookup] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -67,6 +69,15 @@ export default function Live() {
         <h1 className="text-2xl font-bold tracking-tight">Live</h1>
         <p className="text-sm text-slate-500">Updates every 10 seconds.</p>
       </div>
+
+      {networks.data && networks.data.networks.length === 0 && networks.data.policy !== 'off' && (
+        <Alert tone="warning" title="Anyone can check in from anywhere">
+          No office Wi-Fi has been added, so attachees could check in from home.{' '}
+          <Link to="/admin/wifi" className="font-semibold underline">
+            Set up office Wi-Fi
+          </Link>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Visitors inside" value={stats.data?.visitorsInside} />
