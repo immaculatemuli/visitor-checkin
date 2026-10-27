@@ -7,7 +7,6 @@ import { todayIso } from '../lib/format';
 import { useConfig } from '../lib/hooks';
 import { ConsentNotice } from '../components/ConsentNotice';
 import { DocumentScanner } from '../components/DocumentScanner';
-import { IconCard, IconPassport } from '../components/icons';
 import {
   DocumentFields,
   documentPayload,
@@ -19,9 +18,9 @@ import {
   type DocumentValues,
   type VisitValues,
 } from '../components/VisitorFields';
-import { Alert, Button, ChoiceButton, FullPageSpinner, PageTitle, VisitorShell } from '../components/ui';
+import { Alert, Button, FullPageSpinner, PageTitle, VisitorShell } from '../components/ui';
 
-const STEPS = ['consent', 'type', 'scan', 'details'] as const;
+const STEPS = ['scan', 'details'] as const;
 type Step = (typeof STEPS)[number];
 
 function fromMrz(mrz: MrzResult, documentType: DocumentType): DocumentValues {
@@ -35,19 +34,19 @@ function fromMrz(mrz: MrzResult, documentType: DocumentType): DocumentValues {
   };
 }
 
+/** First visit: photograph the ID, check the filled-in details, choose a department, check in. */
 export function FirstVisit({ category, onExit }: { category: VisitCategory; onExit: () => void }) {
   const navigate = useNavigate();
   const config = useConfig();
-  const [step, setStep] = useState<Step>('consent');
-  const [consent, setConsent] = useState(false);
+  const [step, setStep] = useState<Step>('scan');
   const [doc, setDoc] = useState<DocumentValues>(emptyDocument('national_id'));
   const [visit, setVisit] = useState<VisitValues>(emptyVisit(category));
   const [scanned, setScanned] = useState<'ok' | 'check' | null>(null);
+  const [showNotice, setShowNotice] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Start loading the OCR engine while the visitor reads the notice, so scanning starts instantly.
   useEffect(() => {
     void warmUpOcr().catch(() => {});
   }, []);
@@ -55,14 +54,9 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
   if (!config) return <VisitorShell><FullPageSpinner /></VisitorShell>;
 
   const stepInfo = { current: STEPS.indexOf(step) + 1, total: STEPS.length };
-  const back = () => {
-    const i = STEPS.indexOf(step);
-    if (i === 0) onExit();
-    else setStep(STEPS[i - 1]);
-  };
 
   function handleScan(mrz: MrzResult) {
-    // Trust the document over the button the visitor pressed.
+    // A passport is recognised from its MRZ, so there's no need to ask which document it is.
     const scannedType: DocumentType = mrz.format === 'TD3' ? 'passport' : 'national_id';
     setDoc(fromMrz(mrz, scannedType));
     setScanned(mrz.valid ? 'ok' : 'check');
@@ -79,6 +73,7 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
     if (Object.keys(missing).length) return;
     setBusy(true);
     try {
+      // Tapping "Check in" under the notice below is the visitor's consent.
       await api('/public/checkin', {
         method: 'POST',
         body: { ...documentPayload(doc), ...visitPayload(visit), consent: true, consentVersion: config!.consentVersion },
@@ -93,48 +88,9 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
     }
   }
 
-  if (step === 'consent') {
-    return (
-      <VisitorShell
-        onBack={back}
-        step={stepInfo}
-        footer={
-          <>
-            <label className="flex items-start gap-3 py-1">
-              <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span className="text-sm text-slate-600">I have read this and agree to my details being used for check-in.</span>
-            </label>
-            <Button size="lg" disabled={!consent} onClick={() => setStep('type')}>
-              Continue
-            </Button>
-          </>
-        }
-      >
-        <PageTitle title="Your privacy" />
-        <ConsentNotice config={config} />
-      </VisitorShell>
-    );
-  }
-
-  if (step === 'type') {
-    const choose = (type: DocumentType) => {
-      setDoc(emptyDocument(type));
-      setStep('scan');
-    };
-    return (
-      <VisitorShell onBack={back} step={stepInfo}>
-        <PageTitle title="Which document do you have?" subtitle="We'll read your details from it, so there's less to type." />
-        <div className="space-y-3">
-          <ChoiceButton icon={IconCard} title="Kenyan National ID" subtitle="Maisha card or older ID" onClick={() => choose('national_id')} />
-          <ChoiceButton icon={IconPassport} title="Passport" subtitle="Any country" onClick={() => choose('passport')} />
-        </div>
-      </VisitorShell>
-    );
-  }
-
   if (step === 'scan') {
     return (
-      <VisitorShell onBack={back} step={stepInfo}>
+      <VisitorShell onBack={onExit} step={stepInfo}>
         <DocumentScanner
           documentType={doc.documentType}
           onResult={handleScan}
@@ -149,15 +105,23 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
 
   return (
     <VisitorShell
-      onBack={back}
+      onBack={() => setStep('scan')}
       step={stepInfo}
       footer={
-        <Button size="lg" loading={busy} disabled={passportExpired} onClick={() => void submit()}>
-          Check in
-        </Button>
+        <>
+          <Button size="lg" loading={busy} disabled={passportExpired} onClick={() => void submit()}>
+            Check in
+          </Button>
+          <p className="text-center text-xs text-slate-500">
+            By checking in you agree to your details being used for access control.{' '}
+            <button className="font-semibold text-brand-600" onClick={() => setShowNotice(!showNotice)}>
+              {showNotice ? 'Hide privacy notice' : 'Privacy notice'}
+            </button>
+          </p>
+        </>
       }
     >
-      <PageTitle title="Confirm your details" subtitle={scanned ? 'We filled these in from your document. Please check them.' : undefined} />
+      <PageTitle title="Confirm your details" subtitle={scanned ? 'We filled these in from your ID. Check them and choose your department.' : undefined} />
 
       <div className="space-y-4">
         {scanned === 'check' && <Alert tone="warning">Some details may have been misread. Please check each one carefully.</Alert>}
@@ -170,13 +134,17 @@ export function FirstVisit({ category, onExit }: { category: VisitCategory; onEx
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">You</h2>
-        <DocumentFields value={doc} onChange={setDoc} errors={errors} showType={!scanned} />
-      </section>
-      <section className="mt-8">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">{category === 'attachee' ? 'Attachment' : 'Your visit'}</h2>
         <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config.departments} />
       </section>
+      <section className="mt-8">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Your details</h2>
+        <DocumentFields value={doc} onChange={setDoc} errors={errors} showType={!scanned} />
+      </section>
+      {showNotice && (
+        <section className="mt-8">
+          <ConsentNotice config={config} />
+        </section>
+      )}
     </VisitorShell>
   );
 }

@@ -45,7 +45,7 @@ model Visitor {
   nationality        String?
   dob                DateTime?    @db.Date
   documentExpiry     DateTime?    @map("document_expiry") @db.Date
-  phone              String
+  phone              String?
   consentAt          DateTime     @map("consent_at")
   consentVersion     String       @map("consent_version")
   createdAt          DateTime     @default(now()) @map("created_at")

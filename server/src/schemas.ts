@@ -25,18 +25,8 @@ const visitFields = z.object({
 
 type VisitFields = z.infer<typeof visitFields>;
 
-// Attachees work here, so only visitors are asked who they're seeing and why.
-function refineVisit(data: VisitFields, ctx: z.RefinementCtx): void {
-  if (data.category !== 'visitor') return;
-  if (!data.hostName || data.hostName.length < 2) {
-    ctx.addIssue({ code: 'custom', path: ['hostName'], message: 'Enter the name of the person you are visiting' });
-  }
-  if (!data.purpose || data.purpose.length < 3) {
-    ctx.addIssue({ code: 'custom', path: ['purpose'], message: 'Briefly describe the purpose of your visit' });
-  }
-}
-
-export const visitDetailsSchema = visitFields.superRefine(refineVisit);
+// Check-in asks only for the department; host and purpose are optional extras.
+export const visitDetailsSchema = visitFields;
 
 const documentFields = z.object({
   documentType: z.enum(['national_id', 'passport']),
@@ -55,7 +45,7 @@ const documentFields = z.object({
     .optional(),
   dob: isoDate.optional(),
   documentExpiry: isoDate.optional(),
-  phone: phoneSchema,
+  phone: phoneSchema.optional(),
 });
 
 type DocumentFields = z.infer<typeof documentFields>;
@@ -90,7 +80,6 @@ function refineDocument(data: DocumentFields, ctx: z.RefinementCtx): void {
 
 function refineCheckIn(data: DocumentFields & VisitFields, ctx: z.RefinementCtx): void {
   refineDocument(data, ctx);
-  refineVisit(data, ctx);
 }
 
 export const newCheckInSchema = documentFields

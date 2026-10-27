@@ -91,26 +91,29 @@ export function DocumentFields({
   );
 }
 
-/** Visitors give host + purpose; attachees only the department they're attached to. */
+/**
+ * Visitors only choose a department. Staff doing a manual check-in can also note phone, host
+ * and purpose (`extras`), all optional.
+ */
 export function VisitFields({
   value,
   onChange,
   errors,
   departments,
-  showPhone = true,
+  extras = false,
 }: {
   value: VisitValues;
   onChange: (v: VisitValues) => void;
   errors: Errors;
   departments: string[];
-  showPhone?: boolean;
+  extras?: boolean;
 }) {
   const set = (patch: Partial<VisitValues>) => onChange({ ...value, ...patch });
   const isVisitor = value.category === 'visitor';
   return (
     <div className="space-y-4">
-      {showPhone && (
-        <Field label="Phone number" error={errors.phone} hint="So we can recognise you next time">
+      {extras && (
+        <Field label="Phone number (optional)" error={errors.phone}>
           <Input type="tel" value={value.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="0712 345 678" autoComplete="tel" invalid={!!errors.phone} />
         </Field>
       )}
@@ -122,12 +125,12 @@ export function VisitFields({
           ))}
         </Select>
       </Field>
-      {isVisitor && (
+      {extras && isVisitor && (
         <>
-          <Field label="Person you are visiting" error={errors.hostName}>
+          <Field label="Person being visited (optional)" error={errors.hostName}>
             <Input value={value.hostName} onChange={(e) => set({ hostName: e.target.value })} invalid={!!errors.hostName} />
           </Field>
-          <Field label="Purpose of visit" error={errors.purpose}>
+          <Field label="Purpose of visit (optional)" error={errors.purpose}>
             <Textarea rows={2} value={value.purpose} onChange={(e) => set({ purpose: e.target.value })} invalid={!!errors.purpose} />
           </Field>
         </>
@@ -148,17 +151,18 @@ export function documentPayload(v: DocumentValues) {
   };
 }
 
-export function visitPayload(v: VisitValues, includePhone = true) {
+export function visitPayload(v: VisitValues) {
+  const optional = (s: string) => s.trim() || undefined;
   return {
     category: v.category,
     department: v.department,
-    ...(includePhone ? { phone: v.phone } : {}),
-    ...(v.category === 'visitor' ? { hostName: v.hostName.trim(), purpose: v.purpose.trim() } : {}),
+    phone: optional(v.phone),
+    ...(v.category === 'visitor' ? { hostName: optional(v.hostName), purpose: optional(v.purpose) } : {}),
   };
 }
 
 /** Required-field check before calling the API, so every missing field shows at once. */
-export function missingFields(doc: DocumentValues | null, visit: VisitValues, includePhone = true): Errors {
+export function missingFields(doc: DocumentValues | null, visit: VisitValues): Errors {
   const e: Errors = {};
   if (doc) {
     if (!doc.fullName.trim()) e.fullName = 'Enter your full name';
@@ -166,11 +170,6 @@ export function missingFields(doc: DocumentValues | null, visit: VisitValues, in
     if (doc.documentType === 'passport' && !doc.documentExpiry) e.documentExpiry = 'Enter the expiry date';
     if (doc.documentType === 'passport' && !doc.nationality.trim()) e.nationality = 'Enter your nationality';
   }
-  if (includePhone && !visit.phone.trim()) e.phone = 'Enter your phone number';
   if (!visit.department) e.department = 'Choose a department';
-  if (visit.category === 'visitor') {
-    if (!visit.hostName.trim()) e.hostName = 'Enter the name of the person you are visiting';
-    if (!visit.purpose.trim()) e.purpose = 'Briefly describe the purpose of your visit';
-  }
   return e;
 }

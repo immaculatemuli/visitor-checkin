@@ -93,7 +93,7 @@ export default function Live() {
                   {v.visitorName} {v.category === 'attachee' && <Tag tone="brand">Attachee</Tag>}
                 </p>
                 <p className="mt-0.5 text-sm text-slate-600">
-                  {DOC_LABEL[v.documentType]} {v.documentMasked} · {v.visitor.phone} · {v.department}
+                  {DOC_LABEL[v.documentType]} {v.documentMasked}{v.visitor.phone && ` · ${v.visitor.phone}`} · {v.department}
                   {v.hostName && `, visiting ${v.hostName}`}
                 </p>
                 <p className="text-sm text-slate-400">
@@ -149,7 +149,7 @@ export default function Live() {
                       {v.visitorName} {v.category === 'attachee' && <Tag tone="brand">Attachee</Tag>}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {DOC_LABEL[v.documentType]} {v.documentMasked} · {v.visitor.phone}
+                      {DOC_LABEL[v.documentType]} {v.documentMasked}{v.visitor.phone && ` · ${v.visitor.phone}`}
                     </p>
                     {v.flagged && <p className="mt-0.5 text-xs font-medium text-amber-700">{v.flagReason}</p>}
                   </td>

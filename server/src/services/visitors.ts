@@ -13,7 +13,7 @@ export interface DocumentInput {
   nationality?: string;
   dob?: string;
   documentExpiry?: string;
-  phone: string;
+  phone?: string;
 }
 
 /** Creates the visitor or refreshes their details if the document has been seen before. */
@@ -26,7 +26,7 @@ export async function upsertVisitor(input: DocumentInput): Promise<Visitor> {
     nationality: input.nationality ?? (input.documentType === 'national_id' ? 'KEN' : null),
     dob: isoToDate(input.dob),
     documentExpiry: isoToDate(input.documentExpiry),
-    phone: input.phone,
+    ...(input.phone ? { phone: input.phone } : {}),
     consentAt: new Date(),
     consentVersion: CONSENT_VERSION,
   };

@@ -110,7 +110,7 @@ const exportColumns: Column<VisitWithVisitor>[] = [
   { header: 'Name', value: (v) => v.visitor.fullName, width: 110 },
   { header: 'Type', value: (v) => (v.category === 'attachee' ? 'Attachee' : 'Visitor'), width: 50 },
   { header: 'Document', value: (v) => `${v.visitor.documentType === 'passport' ? 'Passport' : 'ID'} ${maskDocument(v.visitor.documentLast4)}`, width: 72 },
-  { header: 'Phone', value: (v) => v.visitor.phone, width: 80 },
+  { header: 'Phone', value: (v) => v.visitor.phone ?? '', width: 80 },
   { header: 'Department', value: (v) => v.department, width: 90 },
   { header: 'Host', value: (v) => v.hostName ?? '', width: 75 },
   { header: 'Purpose', value: (v) => v.purpose ?? '' },

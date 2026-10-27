@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router';
 import { api, ApiError, errorMessage, type PublicVisit, type VisitCategory } from '../lib/api';
 import { formatTime, STATUS_LABEL } from '../lib/format';
 import { useApi, useConfig } from '../lib/hooks';
-import { IconAttachee, IconReturn, IconVisitor } from '../components/icons';
+import { IconAttachee, IconVisitor } from '../components/icons';
 import { emptyVisit, missingFields, VisitFields, visitPayload, type VisitValues } from '../components/VisitorFields';
 import { Alert, Button, ChoiceButton, cx, FullPageSpinner, PageTitle, StatusBadge, VisitorShell } from '../components/ui';
 import { FirstVisit } from './FirstVisit';
-import { OtpLogin } from './OtpLogin';
 
 interface Me {
   visitor: { fullName: string; firstName: string } | null;
@@ -22,7 +21,7 @@ function greeting(): string {
 
 export default function CheckIn() {
   const me = useApi<Me>('/public/me');
-  const [mode, setMode] = useState<{ kind: 'home' } | { kind: 'first'; category: VisitCategory } | { kind: 'otp' }>({ kind: 'home' });
+  const [mode, setMode] = useState<{ kind: 'home' } | { kind: 'first'; category: VisitCategory }>({ kind: 'home' });
 
   if (me.loading && !me.data) return <VisitorShell><FullPageSpinner /></VisitorShell>;
   if (me.error) {
@@ -34,18 +33,14 @@ export default function CheckIn() {
   }
   if (me.data?.visitor) return <Returning me={me.data} onChange={me.reload} />;
   if (mode.kind === 'first') return <FirstVisit category={mode.category} onExit={() => setMode({ kind: 'home' })} />;
-  if (mode.kind === 'otp') return <OtpLogin onDone={me.reload} onBack={() => setMode({ kind: 'home' })} />;
 
   return (
     <VisitorShell>
-      <PageTitle title={`${greeting()}`} subtitle="Check in here before you go in. It takes about a minute." />
+      <PageTitle title={`${greeting()}`} subtitle="Check in here before you go in. Have your ID ready." />
       <div className="space-y-3">
         <ChoiceButton icon={IconVisitor} title="I'm visiting" subtitle="Here to see someone" emphasis onClick={() => setMode({ kind: 'first', category: 'visitor' })} />
         <ChoiceButton icon={IconAttachee} title="I'm an attachee" subtitle="On attachment here" onClick={() => setMode({ kind: 'first', category: 'attachee' })} />
       </div>
-
-      <p className="mb-3 mt-8 text-sm font-medium text-slate-400">Been here before?</p>
-      <ChoiceButton icon={IconReturn} title="Use my phone number" subtitle="We'll text you a code" onClick={() => setMode({ kind: 'otp' })} />
 
       <p className="mt-10 text-center text-sm text-slate-400">No smartphone? Reception can check you in.</p>
     </VisitorShell>
@@ -59,8 +54,6 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
   const [visit, setVisit] = useState<VisitValues>(() => ({
     ...emptyVisit(last?.category ?? 'visitor'),
     department: last?.department ?? '',
-    hostName: last?.hostName ?? '',
-    purpose: last?.purpose ?? '',
   }));
   const [editing, setEditing] = useState(!last?.department);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -86,13 +79,13 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
   }
 
   function checkIn() {
-    const missing = missingFields(null, visit, false);
+    const missing = missingFields(null, visit);
     setErrors(missing);
     if (Object.keys(missing).length) {
       setEditing(true);
       return;
     }
-    void run(() => api('/public/checkin/returning', { method: 'POST', body: visitPayload(visit, false) }));
+    void run(() => api('/public/checkin/returning', { method: 'POST', body: visitPayload(visit) }));
   }
 
   async function forget() {
@@ -114,14 +107,14 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
       <VisitorShell
         footer={
           <>
-            <Button size="lg" onClick={() => navigate('/pass')}>
-              Show my pass
-            </Button>
             {open.status === 'CHECKED_IN' && (
-              <Button size="lg" variant="secondary" loading={busy} onClick={() => void run(() => api('/public/checkout', { method: 'POST' }))}>
+              <Button size="lg" loading={busy} onClick={() => void run(() => api('/public/checkout', { method: 'POST' }))}>
                 Check out
               </Button>
             )}
+            <Button size="lg" variant="secondary" onClick={() => navigate('/pass')}>
+              Show my pass
+            </Button>
           </>
         }
       >
@@ -133,8 +126,8 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
             <StatusBadge status={open.status} label={STATUS_LABEL[open.status]} />
           </div>
           <p className="mt-3 text-lg font-semibold">{open.department}</p>
-          {open.hostName && <p className="text-slate-500">Visiting {open.hostName}</p>}
-          <p className="mt-3 text-sm text-slate-400">Since {formatTime(open.checkInAt ?? open.requestedAt)}</p>
+          <p className="mt-3 text-sm text-slate-400">Checked in at</p>
+          <p className="text-2xl font-bold tabular-nums">{formatTime(open.checkInAt ?? open.requestedAt)}</p>
         </div>
         {notYou}
       </VisitorShell>
@@ -150,22 +143,24 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
         </Button>
       }
     >
-      <PageTitle title={`Welcome back, ${firstName}`} subtitle={isAttachee && !editing ? 'One tap and you are in.' : 'Confirm today’s details.'} />
+      <PageTitle title={`Welcome back, ${firstName}`} subtitle={editing ? 'Choose today’s department.' : 'One tap and you are in.'} />
 
-      <div className="mb-5 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
-        {(['visitor', 'attachee'] as const).map((c) => (
-          <button
-            key={c}
-            onClick={() => {
-              setVisit({ ...visit, category: c });
-              setErrors({});
-            }}
-            className={cx('h-10 rounded-xl text-sm font-semibold transition', visit.category === c ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500')}
-          >
-            {c === 'visitor' ? 'Visitor' : 'Attachee'}
-          </button>
-        ))}
-      </div>
+      {editing && (
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+          {(['visitor', 'attachee'] as const).map((c) => (
+            <button
+              key={c}
+              onClick={() => {
+                setVisit({ ...visit, category: c });
+                setErrors({});
+              }}
+              className={cx('h-10 rounded-xl text-sm font-semibold transition', visit.category === c ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500')}
+            >
+              {c === 'visitor' ? 'Visitor' : 'Attachee'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <div className="mb-4"><Alert tone="error">{error}</Alert></div>}
 
@@ -173,14 +168,12 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
         <div className="rounded-3xl border border-slate-200 p-5">
           <p className="text-sm text-slate-400">{isAttachee ? 'Attached to' : 'Visiting'}</p>
           <p className="mt-1 text-lg font-semibold">{visit.department}</p>
-          {!isAttachee && visit.hostName && <p className="text-slate-500">{visit.hostName}</p>}
-          {!isAttachee && visit.purpose && <p className="mt-2 text-sm text-slate-500">{visit.purpose}</p>}
           <button className="mt-4 text-sm font-semibold text-brand-600" onClick={() => setEditing(true)}>
             Change
           </button>
         </div>
       ) : (
-        <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config?.departments ?? []} showPhone={false} />
+        <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config?.departments ?? []} />
       )}
       {notYou}
     </VisitorShell>

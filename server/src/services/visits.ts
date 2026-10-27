@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { env } from '../env';
 import { HttpError } from '../lib/http';
 import { maskDocument } from '../lib/crypto';
-import { localDate } from '../lib/time';
+import { lastEndOfDay, localDate } from '../lib/time';
 
 export const OPEN_STATUSES: VisitStatus[] = ['PENDING_APPROVAL', 'CHECKED_IN'];
 
@@ -34,6 +34,31 @@ async function uniquePassNumber(tx: Prisma.TransactionClient, now: Date): Promis
 }
 
 /**
+ * Closes a visit left open from an earlier day (the visitor forgot to check out), so the next
+ * day starts with a fresh check-in. It keeps its end-of-day flag, and the check-out time is set
+ * to that day's closing time. Returns true if the visit was closed.
+ */
+export async function closeIfFromEarlierDay(
+  tx: Prisma.TransactionClient,
+  visit: Visit,
+  now = new Date(),
+): Promise<boolean> {
+  const started = visit.checkInAt ?? visit.createdAt;
+  if (visit.status !== 'CHECKED_IN' || localDate(started, env.TIMEZONE) >= localDate(now, env.TIMEZONE)) return false;
+  const closing = lastEndOfDay(now, env.TIMEZONE, env.END_OF_DAY_TIME);
+  await tx.visit.update({
+    where: { id: visit.id },
+    data: {
+      status: 'CHECKED_OUT',
+      checkOutAt: closing > started ? closing : started,
+      flagged: true,
+      flagReason: visit.flagReason ?? 'Not checked out by end of day',
+    },
+  });
+  return true;
+}
+
+/**
  * Opens a visit for a visitor. Serialised per visitor with a row lock so a double tap
  * can't create two open visits. A watchlist match creates the visit as PENDING_APPROVAL.
  */
@@ -48,7 +73,7 @@ export async function startVisit(
     const visitor = await tx.visitor.findUniqueOrThrow({ where: { id: visitorId } });
 
     const open = await tx.visit.findFirst({ where: { visitorId, status: { in: OPEN_STATUSES } } });
-    if (open) {
+    if (open && !(await closeIfFromEarlierDay(tx, open))) {
       throw new HttpError(409, 'Already checked in. Please check out first.', { passNumber: open.passNumber });
     }
 

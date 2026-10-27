@@ -109,7 +109,7 @@ export default function ManualCheckIn() {
               </button>
             ))}
           </div>
-          <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config?.departments ?? []} />
+          <VisitFields value={visit} onChange={setVisit} errors={errors} departments={config?.departments ?? []} extras />
         </Card>
       </div>
 

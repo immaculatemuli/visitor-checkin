@@ -119,7 +119,7 @@ export default function History() {
                     {v.visitorName} {v.category === 'attachee' && <Tag tone="brand">Attachee</Tag>}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {DOC_LABEL[v.documentType]} {v.documentMasked} · {v.visitor.phone}
+                    {DOC_LABEL[v.documentType]} {v.documentMasked}{v.visitor.phone && ` · ${v.visitor.phone}`}
                   </p>
                 </td>
                 <td className="px-4 py-3">

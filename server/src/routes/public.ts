@@ -15,7 +15,7 @@ import { HttpError } from '../lib/http';
 import { sendSms } from '../lib/sms';
 import { checkInLimiter, otpLimiter } from '../middleware/security';
 import { newCheckInSchema, phoneSchema, visitDetailsSchema } from '../schemas';
-import { checkOutVisit, OPEN_STATUSES, startVisit, toPublicVisit } from '../services/visits';
+import { checkOutVisit, closeIfFromEarlierDay, OPEN_STATUSES, startVisit, toPublicVisit } from '../services/visits';
 import { forgetDevice, issueDeviceToken, upsertVisitor, visitorFromDevice } from '../services/visitors';
 
 export const publicRouter = Router();
@@ -43,10 +43,10 @@ publicRouter.get('/me', async (req, res) => {
     res.json({ visitor: null });
     return;
   }
-  const [openVisit, lastVisit] = await Promise.all([
-    prisma.visit.findFirst({ where: { visitorId: visitor.id, status: { in: OPEN_STATUSES } } }),
-    prisma.visit.findFirst({ where: { visitorId: visitor.id }, orderBy: { createdAt: 'desc' } }),
-  ]);
+  let openVisit = await prisma.visit.findFirst({ where: { visitorId: visitor.id, status: { in: OPEN_STATUSES } } });
+  // Yesterday's forgotten check-out shouldn't greet them today with "Check out".
+  if (openVisit && (await closeIfFromEarlierDay(prisma, openVisit))) openVisit = null;
+  const lastVisit = await prisma.visit.findFirst({ where: { visitorId: visitor.id }, orderBy: { createdAt: 'desc' } });
   res.json({
     visitor: { fullName: visitor.fullName, firstName: visitor.fullName.split(' ')[0] },
     openVisit: openVisit ? toPublicVisit(openVisit, visitor) : null,

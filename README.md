@@ -22,10 +22,10 @@ A web app for visitor check-in at the reception of the National Youth Service He
 | Visitor | Staff |
 |---|---|
 | Scans the reception QR poster, which opens `/checkin` | Signs in at `/admin/login` |
-| **First visit:** accepts the data-protection notice, picks ID or passport, photographs the MRZ, confirms the pre-filled details, then adds phone, department, host and purpose | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
-| **Returning:** the phone is recognised by a secure cookie, or by phone number + SMS code. One tap to check in or out | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
+| **First visit:** picks visitor or attachee, photographs the back of their ID (or passport), checks the pre-filled details, chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
+| **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
-| Taps **Check out** when leaving | **Watchlist:** a flagged document number blocks self check-in until security approves |
+| Scans the QR again and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
 | | **Staff** and **Audit log** pages (admin only) |
 
 Visits still open after `END_OF_DAY_TIME` (default 18:00 Nairobi time) are flagged automatically. Records older than `RETENTION_MONTHS` are deleted automatically.

@@ -27,7 +27,7 @@ export default function VerifyPass() {
               <div>
                 <p className="text-xl font-bold">{v.visitorName}</p>
                 <p className="text-sm text-slate-500">
-                  {DOC_LABEL[v.documentType]} {v.documentMasked} · {v.visitor.nationality} · {v.visitor.phone}
+                  {DOC_LABEL[v.documentType]} {v.documentMasked} · {v.visitor.nationality}{v.visitor.phone && ` · ${v.visitor.phone}`}
                 </p>
               </div>
               <StatusBadge status={v.status} label={STATUS_LABEL[v.status]} />
@@ -35,7 +35,7 @@ export default function VerifyPass() {
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-slate-500">Visiting</dt>
-                <dd className="font-medium">{v.category === 'attachee' ? 'Attachee' : v.hostName}</dd>
+                <dd className="font-medium">{v.category === 'attachee' ? 'Attachee' : (v.hostName ?? '—')}</dd>
               </div>
               <div>
                 <dt className="text-slate-500">Department</dt>

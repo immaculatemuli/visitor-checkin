@@ -24,13 +24,6 @@ export const IconAttachee = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
-export const IconReturn = (p: SVGProps<SVGSVGElement>) => (
-  <Icon {...p}>
-    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" />
-    <path d="M4 4v4.5h4.5" />
-  </Icon>
-);
-
 export const IconChevron = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="m9 6 6 6-6 6" />

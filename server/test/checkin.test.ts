@@ -213,14 +213,24 @@ describe('attachees', () => {
     expect(res.body.visit).toMatchObject({ hostName: null, purpose: null });
   });
 
-  it('still requires host and purpose from visitors', async () => {
+  it('checks a visitor in with just the scanned ID and a department', async () => {
     const res = await request(app)
       .post('/api/public/checkin')
       .set(AJAX)
-      .send({ ...nationalId, hostName: undefined, purpose: undefined })
-      .expect(400);
-    const paths = res.body.issues.map((i: { path: string }) => i.path);
-    expect(paths).toEqual(expect.arrayContaining(['hostName', 'purpose']));
+      .send({ ...nationalId, phone: undefined, hostName: undefined, purpose: undefined })
+      .expect(201);
+    expect(res.body.visit).toMatchObject({ category: 'visitor', department: 'ICT', hostName: null, purpose: null });
+    const visitor = await prisma.visitor.findFirstOrThrow();
+    expect(visitor.phone).toBeNull();
+  });
+
+  it('keeps the phone on file when the visitor rescans without one', async () => {
+    const first = request.agent(app);
+    await first.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+    await first.post('/api/public/checkout').set(AJAX).expect(200);
+    await request(app).post('/api/public/checkin').set(AJAX).send({ ...nationalId, phone: undefined }).expect(201);
+    const visitor = await prisma.visitor.findFirstOrThrow();
+    expect(visitor.phone).toBe('+254722000111');
   });
 
   it('remembers the category so the next day is one tap', async () => {
@@ -322,6 +332,31 @@ describe('admin access control', () => {
 });
 
 describe('end of day', () => {
+  it("closes yesterday's forgotten visit so today starts with check-in", async () => {
+    const phone = request.agent(app);
+    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+    const yesterday = new Date(Date.now() - 24 * 3600_000);
+    await prisma.visit.updateMany({ data: { createdAt: yesterday, checkInAt: yesterday } });
+
+    const me = await phone.get('/api/public/me').expect(200);
+    expect(me.body.openVisit).toBeNull();
+    const old = await prisma.visit.findFirstOrThrow();
+    expect(old).toMatchObject({ status: 'CHECKED_OUT', flagged: true });
+    expect(old.checkOutAt!.getTime()).toBeGreaterThanOrEqual(yesterday.getTime());
+
+    await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(201);
+  });
+
+  it("closes yesterday's visit when checking in again without loading the page first", async () => {
+    const phone = request.agent(app);
+    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+    const yesterday = new Date(Date.now() - 24 * 3600_000);
+    await prisma.visit.updateMany({ data: { createdAt: yesterday, checkInAt: yesterday } });
+
+    await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(201);
+    expect(await prisma.visit.count({ where: { status: 'CHECKED_IN' } })).toBe(1);
+  });
+
   it('flags visits still open after closing time', async () => {
     await request(app).post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
     const tomorrow = new Date(Date.now() + 36 * 3600_000);

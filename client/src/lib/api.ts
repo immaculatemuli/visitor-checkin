@@ -77,7 +77,7 @@ export interface StaffVisit extends PublicVisit {
     documentType: DocumentType;
     documentMasked: string;
     nationality: string | null;
-    phone: string;
+    phone: string | null;
   };
 }
 
