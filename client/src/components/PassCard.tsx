@@ -45,7 +45,7 @@ export function PassCard({ visit }: { visit: PublicVisit }) {
         </dl>
       </div>
 
-      <div className={cx('flex items-center justify-between gap-4 px-6 py-5', live ? 'bg-brand-600 text-white' : 'bg-slate-50')}>
+      <div className={cx('flex items-center justify-between gap-4 px-6 py-5', live ? 'border-t-4 border-nys-yellow bg-brand-600 text-white' : 'bg-slate-50')}>
         <div>
           <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em]', live ? 'text-white/70' : 'text-slate-400')}>Pass number</p>
           <p className="mt-0.5 font-mono text-xl font-bold tracking-wider">{visit.passNumber}</p>

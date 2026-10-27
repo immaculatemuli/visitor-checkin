@@ -176,9 +176,25 @@ export function ChoiceButton({
 export function Logo({ compact }: { compact?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2.5">
-      <img src="/favicon.svg" alt="" className="h-8 w-8" />
-      {!compact && <span className="text-[15px] font-semibold tracking-tight">Visitor Check-in</span>}
+      <img src="/nys-emblem.png" alt="National Youth Service" className="h-9 w-auto" />
+      {!compact && (
+        <span className="leading-tight">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-brand-700">National Youth Service</span>
+          <span className="block text-[15px] font-semibold tracking-tight">Visitor Check-in</span>
+        </span>
+      )}
     </span>
+  );
+}
+
+/** The green and yellow band from NYS materials, under page headers. */
+export function NysStripe({ className = 'h-1' }: { className?: string }) {
+  return (
+    <div className={cx('flex shrink-0', className)} aria-hidden>
+      <div className="flex-[3] bg-brand-600" />
+      <div className="flex-1 bg-nys-yellow" />
+      <div className="flex-[3] bg-brand-600" />
+    </div>
   );
 }
 
@@ -210,10 +226,12 @@ export function VisitorShell({
           )}
           {step && <span className="ml-auto text-xs font-medium text-slate-400">Step {step.current} of {step.total}</span>}
         </div>
-        {step && (
-          <div className="mx-auto h-0.5 max-w-md bg-slate-100">
+        {step ? (
+          <div className="mx-auto h-1 max-w-md bg-slate-100">
             <div className="h-full bg-brand-600 transition-[width] duration-300" style={{ width: `${(step.current / step.total) * 100}%` }} />
           </div>
+        ) : (
+          <NysStripe />
         )}
       </header>
       <main className="mx-auto w-full max-w-md flex-1 px-5 pb-6 pt-6">{children}</main>
