@@ -14,9 +14,6 @@ const schema = z.object({
   RENDER_EXTERNAL_URL: z.string().optional(),
   // Built client (client/dist). When set, the API also serves the web app from the same origin.
   STATIC_DIR: z.string().optional(),
-  // Creates this admin on startup if no staff account exists yet (for hosts without a shell).
-  BOOTSTRAP_ADMIN_EMAIL: z.email().optional(),
-  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(12, 'BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters').optional(),
   COOKIE_SECURE: bool.optional(),
   // Number of reverse proxies in front of the API (Render = 1, Vercel rewrite + Render = 2).
   TRUST_PROXY: z.coerce.number().int().min(0).default(1),
@@ -36,7 +33,14 @@ const schema = z.object({
   AT_SENDER_ID: z.string().optional(),
 });
 
-const parsed = schema.safeParse(process.env);
+// Hosting dashboards often save blank or space-padded values; treat blank as unset.
+const cleaned = Object.fromEntries(
+  Object.entries(process.env)
+    .map(([k, v]) => [k, v?.trim()])
+    .filter(([, v]) => v !== ''),
+);
+
+const parsed = schema.safeParse(cleaned);
 if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
   throw new Error(`Invalid environment configuration:\n${issues}`);
@@ -53,8 +57,28 @@ if (raw.SMS_PROVIDER === 'africastalking' && (!raw.AT_USERNAME || !raw.AT_API_KE
   throw new Error('SMS_PROVIDER=africastalking requires AT_USERNAME and AT_API_KEY');
 }
 
+/**
+ * Optional first admin, created on startup if no staff account exists yet (for hosts without a
+ * shell). A bad value is logged and skipped rather than stopping the whole app.
+ */
+function bootstrapAdminConfig() {
+  const email = cleaned.BOOTSTRAP_ADMIN_EMAIL?.replace(/^["']|["']$/g, '').toLowerCase();
+  const password = cleaned.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!email && !password) return {};
+  if (!email || !z.email().safeParse(email).success) {
+    console.warn('[env] BOOTSTRAP_ADMIN_EMAIL is missing or not a valid email; no admin will be created');
+    return {};
+  }
+  if (!password || password.length < 12) {
+    console.warn('[env] BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters; no admin will be created');
+    return {};
+  }
+  return { BOOTSTRAP_ADMIN_EMAIL: email, BOOTSTRAP_ADMIN_PASSWORD: password };
+}
+
 export const env = {
   ...raw,
+  ...bootstrapAdminConfig(),
   COOKIE_SECURE: raw.COOKIE_SECURE ?? raw.NODE_ENV === 'production',
   CLIENT_ORIGINS: clientOrigin.split(',').map((o) => o.trim()),
 };

@@ -8,7 +8,7 @@ import { audit } from './lib/audit';
  * staff accounts yet. Lets hosts without a shell (e.g. Render's free plan) get a first sign-in.
  */
 export async function bootstrapAdmin(): Promise<void> {
-  const email = env.BOOTSTRAP_ADMIN_EMAIL?.toLowerCase();
+  const email = env.BOOTSTRAP_ADMIN_EMAIL;
   const password = env.BOOTSTRAP_ADMIN_PASSWORD;
   if (!email || !password) return;
   if ((await prisma.staff.count()) > 0) return;
