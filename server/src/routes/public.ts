@@ -51,7 +51,11 @@ publicRouter.get('/onsite', async (req, res) => {
   const policy = env.ONSITE_CHECKIN;
   const status = await officeNetworkStatus(req.ip);
   const required = status.configured && (policy === 'all' || (policy === 'attachee' && category === 'attachee'));
-  res.json({ required, onSite: status.onSite, network: status.network });
+  // TEMPORARY: the proxy headers as received, to configure client-IP detection behind Render.
+  const via = Object.fromEntries(
+    ['x-forwarded-for', 'cf-connecting-ip', 'true-client-ip', 'x-real-ip', 'forwarded'].map((h) => [h, req.headers[h] ?? null]),
+  );
+  res.json({ required, onSite: status.onSite, network: status.network, via, socket: req.socket.remoteAddress });
 });
 
 async function requireVisitor(req: Parameters<typeof visitorFromDevice>[0]) {
