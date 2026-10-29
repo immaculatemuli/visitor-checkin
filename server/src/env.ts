@@ -15,7 +15,7 @@ const schema = z.object({
   // Built client (client/dist). When set, the API also serves the web app from the same origin.
   STATIC_DIR: z.string().optional(),
   COOKIE_SECURE: bool.optional(),
-  // Number of reverse proxies in front of the API (Render = 1, Vercel rewrite + Render = 2).
+  // Number of reverse proxies in front of the API (Render = 3: Cloudflare, router, local proxy).
   TRUST_PROXY: z.coerce.number().int().min(0).default(1),
   ORG_NAME: z.string().default(''),
   DPO_CONTACT: z.string().default(''),

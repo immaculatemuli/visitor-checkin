@@ -115,7 +115,7 @@ In development, SMS codes are printed to the API console (`SMS_PROVIDER=console`
 | `NODE_ENV` | | `development` | `production` enables secure cookies |
 | `PORT` | | `4000` | |
 | `COOKIE_SECURE` | | `true` in production | |
-| `TRUST_PROXY` | | `1` | Proxy hops in front of the API: `1` for Render alone, `2` for a Vercel/Netlify rewrite to Render. Rate limiting depends on this being right |
+| `TRUST_PROXY` | | `1` | Proxy hops in front of the API: `3` on Render (Cloudflare, Render's router and a local proxy), one more behind a Vercel/Netlify rewrite. Rate limiting and the office Wi-Fi check depend on this being right |
 | `ORG_NAME` | | National Youth Service Headquarters | Shown in the consent notice and on exports |
 | `DPO_CONTACT` | | (reception desk) | Data Protection Officer contact in the consent notice |
 | `TIMEZONE` | | `Africa/Nairobi` | |
