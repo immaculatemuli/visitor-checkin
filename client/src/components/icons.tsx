@@ -52,6 +52,15 @@ export const IconPassport = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const IconQr = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="4" y="4" width="6" height="6" rx="1" />
+    <rect x="14" y="4" width="6" height="6" rx="1" />
+    <rect x="4" y="14" width="6" height="6" rx="1" />
+    <path d="M14 14h2v2h-2zM18 14h2M14 18h2M18 18h2v2M16 16h2v2" />
+  </Icon>
+);
+
 export const IconCamera = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9Z" />

@@ -29,6 +29,8 @@ const schema = z.object({
   RETENTION_MONTHS: z.coerce.number().int().min(1).default(12),
   AUDIT_RETENTION_MONTHS: z.coerce.number().int().min(1).default(24),
   ENABLE_JOBS: bool.default(true),
+  // Self check-in only after scanning the QR code at reception (the poster in the dashboard).
+  REQUIRE_RECEPTION_SCAN: bool.default(true),
   // Who must be on the office Wi-Fi to check in (once an office network is added in the dashboard).
   ONSITE_CHECKIN: z.enum(['attachee', 'all', 'off']).default('attachee'),
   SMS_PROVIDER: z.enum(['console', 'africastalking']).default('console'),

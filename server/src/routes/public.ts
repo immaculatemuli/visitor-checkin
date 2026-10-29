@@ -15,6 +15,7 @@ import { audit } from '../lib/audit';
 import { hashOtp, randomDigits, safeEqualHex } from '../lib/crypto';
 import { HttpError } from '../lib/http';
 import { officeNetworkStatus } from '../lib/network';
+import { hasScanned, isReceptionCode, markScanned, scanSatisfied } from '../lib/reception';
 import { sendSms } from '../lib/sms';
 import { checkInLimiter, otpLimiter } from '../middleware/security';
 import { newCheckInSchema, phoneSchema, visitDetailsSchema } from '../schemas';
@@ -45,6 +46,22 @@ async function requireOnSite(req: Request, category: VisitCategory, who: string)
   throw new HttpError(403, 'Check-in only works on the NYS Wi-Fi. Connect to the office Wi-Fi and try again.', { code: 'OFF_SITE' });
 }
 
+/** Opening the reception QR link: a valid code unlocks self check-in on this phone for a while. */
+publicRouter.post('/scan', checkInLimiter, async (req, res) => {
+  const { code } = z.object({ code: z.string().trim().min(1).max(64) }).parse(req.body);
+  if (!(await isReceptionCode(code))) {
+    throw new HttpError(400, 'This QR code is no longer valid. Please scan the code at the reception desk.', { code: 'BAD_SCAN' });
+  }
+  markScanned(res);
+  res.status(204).end();
+});
+
+function requireScan(req: Request): void {
+  if (!scanSatisfied(req)) {
+    throw new HttpError(403, 'Please scan the QR code at the reception desk to check in.', { code: 'SCAN_REQUIRED' });
+  }
+}
+
 /** Lets the check-in screen warn up front when this phone isn't on the office Wi-Fi. */
 publicRouter.get('/onsite', async (req, res) => {
   const category = z.enum(['visitor', 'attachee']).default('attachee').parse(req.query.category);
@@ -62,9 +79,10 @@ async function requireVisitor(req: Parameters<typeof visitorFromDevice>[0]) {
 
 /** Who is this device? Used to decide between the first-visit and returning-visitor screens. */
 publicRouter.get('/me', async (req, res) => {
+  const scan = { required: env.REQUIRE_RECEPTION_SCAN, done: hasScanned(req) };
   const visitor = await visitorFromDevice(req);
   if (!visitor) {
-    res.json({ visitor: null });
+    res.json({ visitor: null, scan });
     return;
   }
   let openVisit = await prisma.visit.findFirst({ where: { visitorId: visitor.id, status: { in: OPEN_STATUSES } } });
@@ -72,6 +90,7 @@ publicRouter.get('/me', async (req, res) => {
   if (openVisit && (await closeIfFromEarlierDay(prisma, openVisit))) openVisit = null;
   const lastVisit = await prisma.visit.findFirst({ where: { visitorId: visitor.id }, orderBy: { createdAt: 'desc' } });
   res.json({
+    scan,
     visitor: { fullName: visitor.fullName, firstName: visitor.fullName.split(' ')[0] },
     openVisit: openVisit ? toPublicVisit(openVisit, visitor) : null,
     lastVisitDetails: lastVisit
@@ -86,6 +105,7 @@ publicRouter.get('/me', async (req, res) => {
 });
 
 publicRouter.post('/checkin', checkInLimiter, async (req, res) => {
+  requireScan(req);
   const input = newCheckInSchema.parse(req.body);
   await requireOnSite(req, input.category, input.fullName);
   const visitor = await upsertVisitor(input);
@@ -96,6 +116,7 @@ publicRouter.post('/checkin', checkInLimiter, async (req, res) => {
 
 publicRouter.post('/checkin/returning', checkInLimiter, async (req, res) => {
   const visitor = await requireVisitor(req);
+  requireScan(req);
   const details = visitDetailsSchema.parse(req.body);
   await requireOnSite(req, details.category, visitor.fullName);
   const { visit } = await startVisit(visitor.id, details, 'RETURNING');

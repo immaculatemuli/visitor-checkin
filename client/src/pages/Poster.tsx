@@ -1,14 +1,58 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import { api, ApiError, errorMessage, type Staff } from '../lib/api';
 import { publicUrl } from '../lib/format';
+import { useApi } from '../lib/hooks';
 import { QrCode } from '../components/QrCode';
-import { Button, NysStripe } from '../components/ui';
+import { Alert, Button, FullPageSpinner, NysStripe } from '../components/ui';
 
-/** A4 poster for the reception desk. Open it and print (Ctrl+P), or save as PDF. */
+/**
+ * A4 poster for the reception desk. Open it and print (Ctrl+P), or save as PDF. Staff only: the
+ * QR carries the reception code, which is what proves a visitor is at the desk.
+ */
 export default function Poster() {
-  const url = publicUrl('/checkin');
+  const navigate = useNavigate();
+  const me = useApi<{ staff: Staff }>('/auth/me');
+  const reception = useApi<{ code: string; required: boolean }>('/admin/reception');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (me.error instanceof ApiError && me.error.status === 401) navigate('/admin/login?next=/admin/poster', { replace: true });
+  }, [me.error, navigate]);
+
+  async function changeCode() {
+    if (!confirm('Make a new code? The poster on the wall, and any photo of it, will stop working until you print this new one.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      reception.setData(await api<{ code: string; required: boolean }>('/admin/reception/change', { method: 'POST' }));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!me.data || !reception.data) return <FullPageSpinner />;
+  const url = publicUrl(`/checkin?k=${encodeURIComponent(reception.data.code)}`);
+
   return (
     <div className="min-h-dvh bg-slate-100 print:bg-white">
-      <div className="no-print flex justify-center p-4">
+      <div className="no-print mx-auto flex max-w-[210mm] flex-wrap items-center justify-center gap-3 p-4">
+        <Link to="/admin" className="mr-auto text-sm font-semibold text-brand-700">
+          ← Dashboard
+        </Link>
+        {me.data.staff.role === 'admin' && (
+          <Button variant="secondary" loading={busy} onClick={() => void changeCode()}>
+            Make a new code
+          </Button>
+        )}
         <Button onClick={() => window.print()}>Print poster</Button>
+        {error && <Alert tone="error">{error}</Alert>}
+        <p className="w-full text-center text-xs text-slate-500">
+          Visitors must scan this code at reception to check in. If a photo of it is shared, make a new code and reprint.
+        </p>
       </div>
       <div className="mx-auto flex h-[297mm] w-[210mm] flex-col bg-white shadow-xl print:shadow-none">
         <NysStripe className="h-[4mm]" />
@@ -22,7 +66,7 @@ export default function Poster() {
             <QrCode value={url} size={300} />
           </div>
           <p className="mt-[7mm] text-[20pt] font-semibold">Scan with your phone camera</p>
-          <p className="mt-[2mm] font-mono text-[12pt] text-slate-400">{url}</p>
+          <p className="mt-[2mm] text-[12pt] text-slate-400">Scan each time you arrive</p>
 
           <ol className="mt-auto grid w-full grid-cols-3 gap-[8mm]">
             {[

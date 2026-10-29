@@ -1,13 +1,12 @@
 import express from 'express';
 import request from 'supertest';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { env } from '../src/env';
+import { trustProxySetting } from '../src/lib/proxy';
 
 // Header chains as seen on Render: client, Cloudflare edge, Render's router (from a loopback proxy).
 async function clientIpOnRender(forwardedFor: string): Promise<string> {
-  vi.resetModules();
-  vi.stubEnv('RENDER', 'true');
-  const { trustProxySetting } = await import('../src/lib/proxy');
-  vi.unstubAllEnvs();
+  env.RENDER = true;
   const app = express();
   app.set('trust proxy', trustProxySetting());
   app.get('/ip', (req, res) => {
@@ -16,6 +15,10 @@ async function clientIpOnRender(forwardedFor: string): Promise<string> {
   const res = await request(app).get('/ip').set('X-Forwarded-For', forwardedFor);
   return res.text;
 }
+
+afterEach(() => {
+  env.RENDER = undefined;
+});
 
 describe('client address on Render', () => {
   it('finds the visitor behind Cloudflare and Render', async () => {

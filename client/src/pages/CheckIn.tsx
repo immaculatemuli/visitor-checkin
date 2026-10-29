@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, ApiError, errorMessage, type PublicVisit, type VisitCategory } from '../lib/api';
 import { formatTime, STATUS_LABEL } from '../lib/format';
 import { useApi, useConfig } from '../lib/hooks';
-import { IconAttachee, IconVisitor } from '../components/icons';
+import { IconAttachee, IconQr, IconVisitor } from '../components/icons';
 import { emptyVisit, missingFields, VisitFields, visitPayload, type VisitValues } from '../components/VisitorFields';
 import { Alert, Button, ChoiceButton, cx, FullPageSpinner, PageTitle, StatusBadge, VisitorShell } from '../components/ui';
 import { OffSiteWarning } from '../components/OffSiteWarning';
 import { FirstVisit } from './FirstVisit';
 
 interface Me {
+  scan: { required: boolean; done: boolean };
   visitor: { fullName: string; firstName: string } | null;
   openVisit?: PublicVisit | null;
   lastVisitDetails?: { category: VisitCategory; department: string; hostName: string | null; purpose: string | null } | null;
@@ -20,11 +21,31 @@ function greeting(): string {
   return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 }
 
+/** The reception code from the poster's QR link (/checkin?k=...), if the page was opened from it. */
+function codeFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get('k');
+}
+
 export default function CheckIn() {
-  const me = useApi<Me>('/public/me');
+  // Opening the page from the reception QR registers the scan first, then loads the visitor.
+  const [scanning, setScanning] = useState(() => codeFromUrl() !== null);
+  const [scanError, setScanError] = useState('');
+  const me = useApi<Me>(scanning ? null : '/public/me');
   const [mode, setMode] = useState<{ kind: 'home' } | { kind: 'first'; category: VisitCategory }>({ kind: 'home' });
 
-  if (me.loading && !me.data) return <VisitorShell><FullPageSpinner /></VisitorShell>;
+  useEffect(() => {
+    const code = codeFromUrl();
+    if (!code) return;
+    api('/public/scan', { method: 'POST', body: { code } })
+      .catch((err) => setScanError(errorMessage(err)))
+      .finally(() => {
+        // Drop the code from the address bar so it isn't bookmarked or shared by accident.
+        window.history.replaceState(null, '', '/checkin');
+        setScanning(false);
+      });
+  }, []);
+
+  if (scanning || (me.loading && !me.data)) return <VisitorShell><FullPageSpinner /></VisitorShell>;
   if (me.error) {
     return (
       <VisitorShell>
@@ -32,7 +53,10 @@ export default function CheckIn() {
       </VisitorShell>
     );
   }
-  if (me.data?.visitor) return <Returning me={me.data} onChange={me.reload} />;
+  // Someone inside can always check out; anything else needs a fresh scan at reception.
+  const data = me.data!;
+  if (data.scan.required && !data.scan.done && !data.openVisit) return <ScanAtReception error={scanError} />;
+  if (data.visitor) return <Returning me={data} onChange={me.reload} />;
   if (mode.kind === 'first') return <FirstVisit category={mode.category} onExit={() => setMode({ kind: 'home' })} />;
 
   return (
@@ -44,6 +68,28 @@ export default function CheckIn() {
       </div>
 
       <p className="mt-10 text-center text-sm text-slate-400">No smartphone? Reception can check you in.</p>
+    </VisitorShell>
+  );
+}
+
+function ScanAtReception({ error }: { error: string }) {
+  return (
+    <VisitorShell>
+      <div className="flex flex-col items-center pt-8 text-center">
+        <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-50 text-brand-600">
+          <IconQr className="h-10 w-10" />
+        </span>
+        <h1 className="mt-6 text-[26px] font-bold leading-tight tracking-tight">Scan the QR code at reception</h1>
+        <p className="mt-3 max-w-xs text-[15px] leading-relaxed text-slate-500">
+          To check in, scan the code on the poster at the reception desk with your phone camera. You need to scan it each time you arrive.
+        </p>
+        {error && (
+          <div className="mt-6 w-full text-left">
+            <Alert tone="warning">{error}</Alert>
+          </div>
+        )}
+        <p className="mt-10 text-sm text-slate-400">No smartphone? Reception can check you in.</p>
+      </div>
     </VisitorShell>
   );
 }

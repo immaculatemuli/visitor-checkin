@@ -15,6 +15,7 @@ const LINKS: { to: string; label: string; adminOnly?: boolean }[] = [
   { to: '/admin/manual', label: 'Manual check-in' },
   { to: '/admin/watchlist', label: 'Watchlist' },
   { to: '/admin/wifi', label: 'Office Wi-Fi' },
+  { to: '/admin/poster', label: 'Reception QR' },
   { to: '/admin/staff', label: 'Staff', adminOnly: true },
   { to: '/admin/audit', label: 'Audit log', adminOnly: true },
 ];

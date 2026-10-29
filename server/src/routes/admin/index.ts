@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../db';
 import { requireRole, requireStaff } from '../../middleware/auth';
 import { networksRouter } from './networks';
+import { receptionRouter } from './reception';
 import { staffRouter } from './staff';
 import { visitsRouter } from './visits';
 import { watchlistRouter } from './watchlist';
@@ -15,6 +16,7 @@ adminRouter.use(requireStaff, requireRole('admin', 'security'));
 adminRouter.use('/visits', visitsRouter);
 adminRouter.use('/watchlist', watchlistRouter);
 adminRouter.use('/networks', networksRouter);
+adminRouter.use('/reception', receptionRouter);
 adminRouter.use('/staff', requireRole('admin'), staffRouter);
 
 adminRouter.get('/audit', requireRole('admin'), async (req, res) => {

@@ -21,7 +21,7 @@ A web app for visitor check-in at the reception of the National Youth Service He
 
 | Visitor | Staff |
 |---|---|
-| Scans the reception QR poster, which opens `/checkin` | Signs in at `/admin/login` |
+| Scans the reception QR poster each time they arrive. The QR carries a secret reception code that unlocks check-in on that phone for 30 minutes; opening `/checkin` any other way asks them to scan it. Check-out works without scanning | Signs in at `/admin/login` |
 | **First visit:** picks visitor or attachee, types their name, ID number and date of birth (or fills them in from a photo of the ID), chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
 | **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
@@ -92,7 +92,7 @@ Then open:
 
 - Visitor check-in: http://localhost:5173/checkin
 - Staff dashboard: http://localhost:5173/admin (log in as `admin@nys.local` / `ChangeMe2026!`, or `security@nys.local` / `Security2026!`)
-- QR poster: http://localhost:5173/poster
+- QR poster (staff only): http://localhost:5173/admin/poster
 
 > **Testing on a phone:** the camera needs HTTPS (or localhost). Run `npx vite --host`, open the LAN address through an HTTPS tunnel (for example `cloudflared tunnel --url http://localhost:5173`), and set `CLIENT_ORIGIN` to the tunnel URL.
 
@@ -122,6 +122,7 @@ In development, SMS codes are printed to the API console (`SMS_PROVIDER=console`
 | `END_OF_DAY_TIME` | | `18:00` | Open visits after this time get flagged |
 | `RETENTION_MONTHS` | | `12` | Closed visits and inactive visitors older than this are deleted |
 | `AUDIT_RETENTION_MONTHS` | | `24` | |
+| `REQUIRE_RECEPTION_SCAN` | | `true` | Self check-in only after scanning the reception QR (the poster under **Reception QR** in the dashboard) |
 | `ONSITE_CHECKIN` | | `attachee` | Who must be on the office Wi-Fi to self check-in: `attachee`, `all` or `off`. Applies once an office network is added under **Office Wi-Fi** in the dashboard |
 | `ENABLE_JOBS` | | `true` | Run the hourly flagging and nightly purge jobs in-process |
 | `SMS_PROVIDER` | | `console` | `console` or `africastalking` |
@@ -167,7 +168,7 @@ This is a single Render web service on the free plan: it builds the client and t
    - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` (12+ characters): the first admin account, created on first start if no staff exist
    - `DPO_CONTACT`: the Data Protection Officer contact shown in the consent notice
 4. Wait for the deploy, then open `https://<service>.onrender.com/admin/login` and sign in. Add security staff accounts from the **Staff** page.
-5. Open `/poster`, print it, and put it up at reception.
+5. In the dashboard open **Reception QR** (`/admin/poster`), print it, and put it up at reception. If a photo of it gets shared, press **Make a new code** and reprint.
 
 Each deploy runs `prisma migrate deploy` before starting. `CLIENT_ORIGIN` defaults to the service's own URL, so set it (and `VITE_PUBLIC_URL`) only if you add a custom domain.
 

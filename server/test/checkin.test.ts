@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../src/app';
@@ -6,9 +6,12 @@ import { prisma } from '../src/db';
 import { CONSENT_VERSION } from '../src/config/constants';
 import { hashDocument } from '../src/lib/crypto';
 import { flagOverdueVisits } from '../src/jobs';
+import { env } from '../src/env';
 import { networkOf, normalizeIp } from '../src/lib/network';
 
 const app = createApp();
+// Most tests check in directly; the reception QR scan has its own tests below.
+env.REQUIRE_RECEPTION_SCAN = false;
 const AJAX = { 'X-Requested-With': 'fetch' };
 
 const nationalId = {
@@ -36,7 +39,7 @@ const passport = {
 
 async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE visits, visitors, watchlist, audit_logs, device_tokens, otp_codes, office_networks, staff RESTART IDENTITY CASCADE',
+    'TRUNCATE visits, visitors, watchlist, audit_logs, device_tokens, otp_codes, office_networks, app_settings, staff RESTART IDENTITY CASCADE',
   );
 }
 
@@ -441,3 +444,72 @@ describe('office Wi-Fi', () => {
     await security.post('/api/admin/networks').set(AJAX).set(HOME).send({ label: 'Home' }).expect(403);
   });
 });
+
+describe('reception QR scan', () => {
+  beforeEach(() => {
+    env.REQUIRE_RECEPTION_SCAN = true;
+  });
+  afterEach(() => {
+    env.REQUIRE_RECEPTION_SCAN = false;
+  });
+
+  async function receptionCode() {
+    const security = await staffAgent('security');
+    const res = await security.get('/api/admin/reception').expect(200);
+    expect(res.body.code).toMatch(/^[A-Za-z0-9_-]{12}$/);
+    return res.body.code as string;
+  }
+
+  it('refuses check-in on a phone that has not scanned the reception QR', async () => {
+    const phone = request.agent(app);
+    const me = await phone.get('/api/public/me').expect(200);
+    expect(me.body.scan).toEqual({ required: true, done: false });
+    const res = await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(403);
+    expect(res.body).toMatchObject({ code: 'SCAN_REQUIRED' });
+    expect(await prisma.visit.count()).toBe(0);
+  });
+
+  it('lets a phone check in after scanning, and rejects a wrong code', async () => {
+    const code = await receptionCode();
+    const phone = request.agent(app);
+    const bad = await phone.post('/api/public/scan').set(AJAX).send({ code: 'not-the-code' }).expect(400);
+    expect(bad.body).toMatchObject({ code: 'BAD_SCAN' });
+    await phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
+    expect((await phone.get('/api/public/me').expect(200)).body.scan.done).toBe(true);
+    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+  });
+
+  it('makes returning visitors scan each visit, but lets them check out without scanning', async () => {
+    const code = await receptionCode();
+    const phone = request.agent(app);
+    await phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
+    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+
+    // Next visit: the same phone comes back after the scan has expired.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60_000 });
+    try {
+      await phone.post('/api/public/checkout').set(AJAX).expect(200);
+      const res = await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(403);
+      expect(res.body.code).toBe('SCAN_REQUIRED');
+      await phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
+      await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(201);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets only admins change the code, and the old code stops working', async () => {
+    const old = await receptionCode();
+    const admin = await staffAgent('admin');
+    const changed = await admin.post('/api/admin/reception/change').set(AJAX).expect(200);
+    expect(changed.body.code).not.toBe(old);
+    await request(app).post('/api/public/scan').set(AJAX).send({ code: old }).expect(400);
+    await request(app).post('/api/public/scan').set(AJAX).send({ code: changed.body.code }).expect(204);
+
+    // receptionCode() signed in as security; security can view the code but not change it.
+    const guard = request.agent(app);
+    await guard.post('/api/auth/login').set(AJAX).send({ email: 'security@test.local', password: 'Password123' }).expect(200);
+    await guard.post('/api/admin/reception/change').set(AJAX).expect(403);
+  });
+});
+

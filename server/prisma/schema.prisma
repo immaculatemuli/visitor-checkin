@@ -177,3 +177,12 @@ model OtpCode {
   @@index([phone, createdAt])
   @@map("otp_codes")
 }
+
+// Small key/value settings changed from the dashboard (e.g. the reception QR code).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
