@@ -479,20 +479,33 @@ describe('reception QR scan', () => {
     await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
   });
 
-  it('makes returning visitors scan each visit, but lets them check out without scanning', async () => {
+  it('needs a fresh scan for every check-in and check-out, including returning visitors', async () => {
+    const code = await receptionCode();
+    const phone = request.agent(app);
+    const scan = () => phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
+    await scan();
+    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
+
+    // The arrival scan is used up: leaving needs its own scan at the desk.
+    const out = await phone.post('/api/public/checkout').set(AJAX).expect(403);
+    expect(out.body).toMatchObject({ code: 'SCAN_REQUIRED', error: 'Please scan the QR code at the reception desk to check out.' });
+    expect((await phone.get('/api/public/me').expect(200)).body.scan.done).toBe(false);
+    await scan();
+    await phone.post('/api/public/checkout').set(AJAX).expect(200);
+
+    // Next visit: the returning visitor scans again.
+    await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(403);
+    await scan();
+    await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(201);
+  });
+
+  it('expires a scan after 30 minutes', async () => {
     const code = await receptionCode();
     const phone = request.agent(app);
     await phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
-    await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(201);
-
-    // Next visit: the same phone comes back after the scan has expired.
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60_000 });
     try {
-      await phone.post('/api/public/checkout').set(AJAX).expect(200);
-      const res = await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(403);
-      expect(res.body.code).toBe('SCAN_REQUIRED');
-      await phone.post('/api/public/scan').set(AJAX).send({ code }).expect(204);
-      await phone.post('/api/public/checkin/returning').set(AJAX).send({ department: 'ICT' }).expect(201);
+      await phone.post('/api/public/checkin').set(AJAX).send(nationalId).expect(403);
     } finally {
       vi.useRealTimers();
     }

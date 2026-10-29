@@ -3,12 +3,16 @@ import { useNavigate } from 'react-router';
 import { api, ApiError, errorMessage, type PublicVisit } from '../lib/api';
 import { formatTime } from '../lib/format';
 import { useApi, useInterval } from '../lib/hooks';
+import { IconQr } from '../components/icons';
 import { PassCard } from '../components/PassCard';
 import { Alert, Button, FullPageSpinner, PageTitle, VisitorShell } from '../components/ui';
 
 export default function Pass() {
   const navigate = useNavigate();
   const pass = useApi<{ visit: PublicVisit }>('/public/pass');
+  // Check-out needs a fresh scan at reception; the one used to check in doesn't count.
+  const me = useApi<{ scan: { required: boolean; done: boolean } }>('/public/me');
+  const mustScan = !!me.data && me.data.scan.required && !me.data.scan.done;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const visit = pass.data?.visit;
@@ -43,9 +47,16 @@ export default function Pass() {
 
   const footer =
     visit.status === 'CHECKED_IN' ? (
-      <Button size="lg" variant="secondary" loading={busy} onClick={() => void checkOut()}>
-        Check out
-      </Button>
+      mustScan ? (
+        <div className="flex items-center gap-3 rounded-2xl bg-brand-50 px-4 py-3 text-sm font-medium text-brand-900">
+          <IconQr className="h-6 w-6 shrink-0 text-brand-600" />
+          To check out, scan the QR code at reception as you leave.
+        </div>
+      ) : (
+        <Button size="lg" variant="secondary" loading={busy} onClick={() => void checkOut()}>
+          Check out
+        </Button>
+      )
     ) : visit.status !== 'PENDING_APPROVAL' ? (
       <Button size="lg" onClick={() => navigate('/checkin')}>
         Done

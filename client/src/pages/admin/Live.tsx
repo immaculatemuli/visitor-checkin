@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api, errorMessage, type StaffVisit } from '../../lib/api';
-import { DOC_LABEL, formatTime } from '../../lib/format';
+import { DOC_LABEL, formatDuration, formatTime, STATUS_LABEL, todayIso } from '../../lib/format';
 import { useApi, useInterval } from '../../lib/hooks';
-import { Alert, Button, Card, cx, Input, Tag } from '../../components/ui';
+import { Alert, Button, Card, cx, Input, StatusBadge, Tag } from '../../components/ui';
 import type { NetworksResponse } from './OfficeWifi';
 
 interface Stats {
@@ -21,6 +21,8 @@ export default function Live() {
   const live = useApi<{ pending: StaffVisit[]; inside: StaffVisit[] }>('/admin/visits/live');
   const stats = useApi<Stats>('/admin/visits/stats');
   const networks = useApi<NetworksResponse>('/admin/networks');
+  // Everyone who checked in today, including those who have left, so the day's record stays on screen.
+  const today = useApi<{ total: number; visits: StaffVisit[] }>(`/admin/visits?from=${todayIso()}&to=${todayIso()}&pageSize=100`);
   const [passLookup, setPassLookup] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -30,7 +32,8 @@ export default function Live() {
   const refresh = useCallback(() => {
     void live.reload();
     void stats.reload();
-  }, [live.reload, stats.reload]);
+    void today.reload();
+  }, [live.reload, stats.reload, today.reload]);
   useInterval(refresh, 10_000);
 
   const pendingCount = live.data?.pending.length ?? 0;
@@ -190,6 +193,65 @@ export default function Live() {
             </tbody>
           </table>
         </Card>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-baseline gap-3">
+          <h2 className="font-semibold">Today</h2>
+          <span className="text-sm text-slate-500">
+            {today.data ? `${today.data.total} check-in${today.data.total === 1 ? '' : 's'}, including people who have left` : ''}
+          </span>
+          <Link to="/admin/history" className="ml-auto text-sm font-semibold text-brand-700">
+            Other days and export →
+          </Link>
+        </div>
+        <Card className="overflow-x-auto p-0">
+          <table className="min-w-full text-sm">
+            <thead className="text-left text-xs text-slate-400">
+              <tr className="border-b border-slate-100">
+                <th className="px-5 py-3 font-medium">Name</th>
+                <th className="px-5 py-3 font-medium">Department</th>
+                <th className="px-5 py-3 font-medium">Time in</th>
+                <th className="px-5 py-3 font-medium">Time out</th>
+                <th className="px-5 py-3 font-medium">Stayed</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {today.data?.visits.map((v) => (
+                <tr key={v.id} className={v.flagged ? 'bg-amber-50/60' : ''}>
+                  <td className="px-5 py-3">
+                    <p className="font-semibold">
+                      {v.visitorName} {v.category === 'attachee' && <Tag tone="brand">Attachee</Tag>}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {DOC_LABEL[v.documentType]} {v.documentMasked}
+                    </p>
+                  </td>
+                  <td className="px-5 py-3">{v.department}</td>
+                  <td className="whitespace-nowrap px-5 py-3">{formatTime(v.checkInAt)}</td>
+                  <td className="whitespace-nowrap px-5 py-3">{v.status === 'CHECKED_IN' ? <span className="text-slate-400">Still inside</span> : formatTime(v.checkOutAt)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-slate-600">{formatDuration(v.checkInAt, v.checkOutAt)}</td>
+                  <td className="px-5 py-3">
+                    <StatusBadge status={v.status} label={STATUS_LABEL[v.status]} />
+                  </td>
+                </tr>
+              ))}
+              {today.data?.visits.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
+                    No check-ins yet today.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
+        {today.data && today.data.total > today.data.visits.length && (
+          <p className="text-sm text-slate-500">
+            Showing the latest {today.data.visits.length}. See all in <Link to="/admin/history" className="font-semibold text-brand-700">History</Link>.
+          </p>
+        )}
       </section>
 
       <Card>

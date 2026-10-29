@@ -50,20 +50,17 @@ export default function AdminLayout() {
       <header className="sticky top-0 z-10 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4">
           <Logo />
-          <nav className="hidden flex-1 gap-1 text-sm md:flex">
+          <nav className="hidden flex-1 gap-0.5 text-sm xl:flex">
             {LINKS.filter((l) => !l.adminOnly || staff.role === 'admin').map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
                 end={l.to === '/admin'}
-                className={({ isActive }) => cx('rounded-lg px-3 py-2 font-medium transition', isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:text-slate-900')}
+                className={({ isActive }) => cx('whitespace-nowrap rounded-lg px-2.5 py-2 font-medium transition', isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:text-slate-900')}
               >
                 {l.label}
               </NavLink>
             ))}
-            <a href="/poster" target="_blank" rel="noreferrer" className="rounded-lg px-3 py-2 font-medium text-slate-500 hover:text-slate-900">
-              QR poster ↗
-            </a>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
@@ -75,7 +72,7 @@ export default function AdminLayout() {
             </button>
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-2 text-sm md:hidden">
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-2 text-sm xl:hidden">
           {LINKS.filter((l) => !l.adminOnly || staff.role === 'admin').map((l) => (
             <NavLink
               key={l.to}

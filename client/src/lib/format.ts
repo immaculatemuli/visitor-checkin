@@ -20,6 +20,14 @@ export function formatDateTime(iso: string | null | undefined): string {
   }).format(new Date(iso));
 }
 
+/** Time between check-in and check-out (or now, if still inside), e.g. "2 h 15 min". */
+export function formatDuration(from: string | null | undefined, to: string | null | undefined): string {
+  if (!from) return '—';
+  const minutes = Math.max(0, Math.round(((to ? new Date(to) : new Date()).getTime() - new Date(from).getTime()) / 60_000));
+  const h = Math.floor(minutes / 60);
+  return h ? `${h} h ${minutes % 60} min` : `${minutes} min`;
+}
+
 export function todayIso(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 }

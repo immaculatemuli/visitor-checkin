@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { apiUrl, type StaffVisit } from '../../lib/api';
-import { DOC_LABEL, formatDateTime, STATUS_LABEL, todayIso } from '../../lib/format';
+import { DOC_LABEL, formatDateTime, formatDuration, STATUS_LABEL, todayIso } from '../../lib/format';
 import { useApi, useConfig } from '../../lib/hooks';
 import { Alert, Button, Card, Field, Input, Select, StatusBadge, Tag } from '../../components/ui';
 
@@ -105,9 +105,9 @@ export default function History() {
             <tr className="border-b border-slate-100">
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Department</th>
-              <th className="px-4 py-3">Purpose</th>
               <th className="px-4 py-3">In</th>
               <th className="px-4 py-3">Out</th>
+              <th className="px-4 py-3">Stayed</th>
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
@@ -125,10 +125,11 @@ export default function History() {
                 <td className="px-4 py-3">
                   {v.department}
                   {v.hostName && <p className="text-xs text-slate-500">Visiting {v.hostName}</p>}
+                  {v.purpose && <p className="max-w-xs text-xs text-slate-500">{v.purpose}</p>}
                 </td>
-                <td className="max-w-xs px-4 py-3 text-slate-600">{v.purpose ?? '—'}</td>
                 <td className="whitespace-nowrap px-4 py-3">{formatDateTime(v.checkInAt)}</td>
-                <td className="whitespace-nowrap px-4 py-3">{formatDateTime(v.checkOutAt)}</td>
+                <td className="whitespace-nowrap px-4 py-3">{v.status === 'CHECKED_IN' ? 'Still inside' : formatDateTime(v.checkOutAt)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDuration(v.checkInAt, v.checkOutAt)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={v.status} label={STATUS_LABEL[v.status]} />
                   {v.flagged && <p className="mt-1 text-xs text-amber-800">⚠ {v.flagReason}</p>}

@@ -21,11 +21,11 @@ A web app for visitor check-in at the reception of the National Youth Service He
 
 | Visitor | Staff |
 |---|---|
-| Scans the reception QR poster each time they arrive. The QR carries a secret reception code that unlocks check-in on that phone for 30 minutes; opening `/checkin` any other way asks them to scan it. Check-out works without scanning | Signs in at `/admin/login` |
-| **First visit:** picks visitor or attachee, types their name, ID number and date of birth (or fills them in from a photo of the ID), chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
+| Scans the reception QR poster each time they arrive. The QR carries a secret reception code that unlocks check-in on that phone for 30 minutes; opening `/checkin` any other way asks them to scan it. A scan is used up by one check-in or check-out, so they scan again when leaving | Signs in at `/admin/login` |
+| **First visit:** picks visitor or attachee, types their name, ID number and date of birth (or fills them in from a photo of the ID), chooses a department and taps **Check in**, which also accepts the privacy notice | **Live:** who's inside, today's full list of check-ins with time in, time out and length of stay, plus watchlist alerts with Approve/Deny (auto-refreshes every 10 s) |
 | **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
-| Scans the QR again and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
+| Scans the QR again at reception and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
 | | **Staff** and **Audit log** pages (admin only) |
 
 Visits still open after `END_OF_DAY_TIME` (default 18:00 Nairobi time) are flagged automatically. Records older than `RETENTION_MONTHS` are deleted automatically.

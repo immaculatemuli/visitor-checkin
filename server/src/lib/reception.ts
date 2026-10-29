@@ -43,6 +43,11 @@ export function markScanned(res: Response): void {
   res.cookie(SCAN_COOKIE, token, { ...cookieOptions(), maxAge: SCAN_VALID_MINUTES * 60_000 });
 }
 
+/** A scan covers one check-in or one check-out, so leaving needs its own scan at the desk. */
+export function useUpScan(res: Response): void {
+  res.clearCookie(SCAN_COOKIE, cookieOptions());
+}
+
 export function hasScanned(req: Request): boolean {
   const token: string | undefined = req.cookies?.[SCAN_COOKIE];
   if (!token) return false;

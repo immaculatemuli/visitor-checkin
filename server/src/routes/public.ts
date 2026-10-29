@@ -15,7 +15,7 @@ import { audit } from '../lib/audit';
 import { hashOtp, randomDigits, safeEqualHex } from '../lib/crypto';
 import { HttpError } from '../lib/http';
 import { officeNetworkStatus } from '../lib/network';
-import { hasScanned, isReceptionCode, markScanned, scanSatisfied } from '../lib/reception';
+import { hasScanned, isReceptionCode, markScanned, scanSatisfied, useUpScan } from '../lib/reception';
 import { sendSms } from '../lib/sms';
 import { checkInLimiter, otpLimiter } from '../middleware/security';
 import { newCheckInSchema, phoneSchema, visitDetailsSchema } from '../schemas';
@@ -56,9 +56,9 @@ publicRouter.post('/scan', checkInLimiter, async (req, res) => {
   res.status(204).end();
 });
 
-function requireScan(req: Request): void {
+function requireScan(req: Request, action: 'check in' | 'check out'): void {
   if (!scanSatisfied(req)) {
-    throw new HttpError(403, 'Please scan the QR code at the reception desk to check in.', { code: 'SCAN_REQUIRED' });
+    throw new HttpError(403, `Please scan the QR code at the reception desk to ${action}.`, { code: 'SCAN_REQUIRED' });
   }
 }
 
@@ -105,32 +105,36 @@ publicRouter.get('/me', async (req, res) => {
 });
 
 publicRouter.post('/checkin', checkInLimiter, async (req, res) => {
-  requireScan(req);
+  requireScan(req, 'check in');
   const input = newCheckInSchema.parse(req.body);
   await requireOnSite(req, input.category, input.fullName);
   const visitor = await upsertVisitor(input);
   const { visit } = await startVisit(visitor.id, input, 'SELF');
   await issueDeviceToken(res, visitor.id);
+  useUpScan(res);
   res.status(visit.status === 'PENDING_APPROVAL' ? 202 : 201).json({ visit: toPublicVisit(visit, visitor) });
 });
 
 publicRouter.post('/checkin/returning', checkInLimiter, async (req, res) => {
   const visitor = await requireVisitor(req);
-  requireScan(req);
+  requireScan(req, 'check in');
   const details = visitDetailsSchema.parse(req.body);
   await requireOnSite(req, details.category, visitor.fullName);
   const { visit } = await startVisit(visitor.id, details, 'RETURNING');
+  useUpScan(res);
   res.status(visit.status === 'PENDING_APPROVAL' ? 202 : 201).json({ visit: toPublicVisit(visit, visitor) });
 });
 
 publicRouter.post('/checkout', checkInLimiter, async (req, res) => {
   const visitor = await requireVisitor(req);
+  requireScan(req, 'check out');
   const open = await prisma.visit.findFirst({ where: { visitorId: visitor.id, status: { in: OPEN_STATUSES } } });
   if (!open) throw new HttpError(409, 'You are not checked in.');
   if (open.status === 'PENDING_APPROVAL') {
     throw new HttpError(409, 'Your check-in is waiting for security. Please see the security desk.');
   }
   const visit = await checkOutVisit(open.id);
+  useUpScan(res);
   res.json({ visit: toPublicVisit(visit, visitor) });
 });
 

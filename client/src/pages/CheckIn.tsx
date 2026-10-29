@@ -150,11 +150,19 @@ function Returning({ me, onChange }: { me: Me; onChange: () => void }) {
   );
 
   if (open) {
+    // Leaving needs a scan at the desk too, so check-out appears once they've scanned.
+    const mustScan = me.scan.required && !me.scan.done;
     return (
       <VisitorShell
         footer={
           <>
-            {open.status === 'CHECKED_IN' && (
+            {open.status === 'CHECKED_IN' && mustScan && (
+              <div className="flex items-center gap-3 rounded-2xl bg-brand-50 px-4 py-3 text-sm font-medium text-brand-900">
+                <IconQr className="h-6 w-6 shrink-0 text-brand-600" />
+                To check out, scan the QR code at reception as you leave.
+              </div>
+            )}
+            {open.status === 'CHECKED_IN' && !mustScan && (
               <Button size="lg" loading={busy} onClick={() => void run(() => api('/public/checkout', { method: 'POST' }))}>
                 Check out
               </Button>
