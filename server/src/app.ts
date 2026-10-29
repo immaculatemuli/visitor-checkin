@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './env';
+import { trustProxySetting } from './lib/proxy';
 import { errorHandler } from './middleware/error';
 import { requireAjaxHeader } from './middleware/security';
 import { adminRouter } from './routes/admin';
@@ -15,7 +16,7 @@ const OCR_CDN = 'https://cdn.jsdelivr.net';
 
 export function createApp() {
   const app = express();
-  app.set('trust proxy', env.TRUST_PROXY);
+  app.set('trust proxy', trustProxySetting());
   app.disable('x-powered-by');
 
   app.use(

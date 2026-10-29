@@ -12,10 +12,12 @@ const schema = z.object({
   // Comma-separated list of allowed browser origins. On Render, defaults to the service's own URL.
   CLIENT_ORIGIN: z.string().min(1).optional(),
   RENDER_EXTERNAL_URL: z.string().optional(),
+  // Set by Render on its servers; proxy trust is then worked out automatically (see lib/proxy.ts).
+  RENDER: bool.optional(),
   // Built client (client/dist). When set, the API also serves the web app from the same origin.
   STATIC_DIR: z.string().optional(),
   COOKIE_SECURE: bool.optional(),
-  // Number of reverse proxies in front of the API (Render = 3: Cloudflare, router, local proxy).
+  // Number of reverse proxies in front of the API. Ignored on Render, which is handled automatically.
   TRUST_PROXY: z.coerce.number().int().min(0).default(1),
   ORG_NAME: z.string().default(''),
   DPO_CONTACT: z.string().default(''),

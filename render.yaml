@@ -25,10 +25,6 @@ services:
       - key: STATIC_DIR
         value: ../client/dist
       # CLIENT_ORIGIN defaults to this service's own URL (RENDER_EXTERNAL_URL). Set it for a custom domain.
-      # Proxies in front of the app on Render: Cloudflare, Render's router and a local proxy.
-      # Needed to see each phone's real address (rate limits, office Wi-Fi check).
-      - key: TRUST_PROXY
-        value: "3"
       - key: TIMEZONE
         value: Africa/Nairobi
       - key: RETENTION_MONTHS
