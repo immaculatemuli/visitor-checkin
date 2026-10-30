@@ -104,3 +104,10 @@ export const watchlistDocumentSchema = z.object({
   documentNumber: z.string().trim().min(5).max(20).transform(normalizeDocNumber),
   reason: z.string().trim().min(3).max(300),
 });
+
+export const staffPasswordSchema = z
+  .string()
+  .min(10, 'Password must be at least 10 characters')
+  .max(200)
+  .regex(/[A-Za-z]/, 'Password must contain a letter')
+  .regex(/\d/, 'Password must contain a number');

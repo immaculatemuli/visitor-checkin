@@ -14,6 +14,8 @@ const History = lazy(() => import('./pages/admin/History'));
 const ManualCheckIn = lazy(() => import('./pages/admin/ManualCheckIn'));
 const Watchlist = lazy(() => import('./pages/admin/Watchlist'));
 const OfficeWifi = lazy(() => import('./pages/admin/OfficeWifi'));
+const Attendance = lazy(() => import('./pages/admin/Attendance'));
+const Account = lazy(() => import('./pages/admin/Account'));
 const StaffPage = lazy(() => import('./pages/admin/StaffPage'));
 const Audit = lazy(() => import('./pages/admin/Audit'));
 const VerifyPass = lazy(() => import('./pages/admin/VerifyPass'));
@@ -35,6 +37,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="manual" element={<ManualCheckIn />} />
             <Route path="watchlist" element={<Watchlist />} />
             <Route path="wifi" element={<OfficeWifi />} />
+            <Route path="attendance" element={<Attendance />} />
+            <Route path="account" element={<Account />} />
             <Route path="staff" element={<StaffPage />} />
             <Route path="audit" element={<Audit />} />
             <Route path="verify/:passNumber" element={<VerifyPass />} />

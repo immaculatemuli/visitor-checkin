@@ -26,7 +26,8 @@ A web app for visitor check-in at the reception of the National Youth Service He
 | **Returning:** the phone is recognised by a secure cookie. One tap to check in or out, with the last department remembered. On a new phone they just scan their ID again | **History:** search by date, name, document number (full or last 4) and department. Export to CSV or PDF |
 | Gets a digital pass (name, host, time in, pass number, live clock, QR) | **Manual check-in** for visitors without a smartphone |
 | Scans the QR again at reception and taps **Check out** when leaving. A visit left open from an earlier day is closed (and flagged) automatically | **Watchlist:** a flagged document number blocks self check-in until security approves |
-| | **Staff** and **Audit log** pages (admin only) |
+| | **Attendance:** per attachee (or visitor) over a date range: days present, attendance %, total and average hours, late arrivals and missed check-outs. Export to CSV or PDF |
+| | **Staff** and **Audit log** pages (admin only). Everyone can change their own password under **My account** |
 
 Visits still open after `END_OF_DAY_TIME` (default 18:00 Nairobi time) are flagged automatically. Records older than `RETENTION_MONTHS` are deleted automatically.
 
@@ -120,6 +121,7 @@ In development, SMS codes are printed to the API console (`SMS_PROVIDER=console`
 | `DPO_CONTACT` | | (reception desk) | Data Protection Officer contact in the consent notice |
 | `TIMEZONE` | | `Africa/Nairobi` | |
 | `END_OF_DAY_TIME` | | `18:00` | Open visits after this time get flagged |
+| `ATTENDANCE_START_TIME` | | `08:30` | Attendance report: a first check-in of the day after this time counts as late |
 | `RETENTION_MONTHS` | | `12` | Closed visits and inactive visitors older than this are deleted |
 | `AUDIT_RETENTION_MONTHS` | | `24` | |
 | `REQUIRE_RECEPTION_SCAN` | | `true` | Self check-in only after scanning the reception QR (the poster under **Reception QR** in the dashboard) |
@@ -128,6 +130,7 @@ In development, SMS codes are printed to the API console (`SMS_PROVIDER=console`
 | `SMS_PROVIDER` | | `console` | `console` or `africastalking` |
 | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` | with `africastalking` | | Africa's Talking credentials. Use `sandbox` as the username for testing |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | | | Override the seeded admin account |
+| `RECOVER_ADMIN_EMAIL`, `RECOVER_ADMIN_PASSWORD` | | | Emergency admin recovery (see below). Remove them once signed in |
 
 ### Client (`client/.env`)
 
@@ -189,6 +192,10 @@ To serve the frontend from a CDN and keep the API separate (on Render or Railway
    **Netlify:** import the repo and set the base directory to `client`. `client/netlify.toml` provides the build, the `/api` proxy and the security headers.
 
 On Railway, use build command `npm ci --include=dev && npm run build -w server` and start command `npm run start:prod -w server`.
+
+### If every admin is locked out
+
+Render's free plan has no shell, so recovery works through two settings. Under **Environment** add `RECOVER_ADMIN_EMAIL` (the admin's email) and `RECOVER_ADMIN_PASSWORD` (a new password, 12+ characters), then save and redeploy. On start the app sets that password, and makes the account an active admin (creating it if needed). Sign in, then **delete both settings** and redeploy, since they apply on every start. Each recovery is recorded in the audit log as `ADMIN_RECOVERY`.
 
 ### Production checklist
 

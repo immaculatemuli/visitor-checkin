@@ -4,6 +4,7 @@ import { prisma } from '../../db';
 import { requireRole, requireStaff } from '../../middleware/auth';
 import { networksRouter } from './networks';
 import { receptionRouter } from './reception';
+import { reportsRouter } from './reports';
 import { staffRouter } from './staff';
 import { visitsRouter } from './visits';
 import { watchlistRouter } from './watchlist';
@@ -17,6 +18,7 @@ adminRouter.use('/visits', visitsRouter);
 adminRouter.use('/watchlist', watchlistRouter);
 adminRouter.use('/networks', networksRouter);
 adminRouter.use('/reception', receptionRouter);
+adminRouter.use('/reports', reportsRouter);
 adminRouter.use('/staff', requireRole('admin'), staffRouter);
 
 adminRouter.get('/audit', requireRole('admin'), async (req, res) => {

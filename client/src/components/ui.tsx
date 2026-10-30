@@ -179,7 +179,7 @@ export function Logo({ compact }: { compact?: boolean }) {
     <span className="inline-flex items-center gap-2.5">
       <img src="/nys-emblem.png" alt="National Youth Service" className="h-9 w-auto" />
       {!compact && (
-        <span className="leading-tight">
+        <span className="whitespace-nowrap leading-tight">
           <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-brand-700">National Youth Service</span>
           <span className="block text-[15px] font-semibold tracking-tight">Visitor Check-in</span>
         </span>

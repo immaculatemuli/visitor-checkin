@@ -26,6 +26,11 @@ const schema = z.object({
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM')
     .default('18:00'),
+  // Attendance report: a first check-in of the day after this time counts as late.
+  ATTENDANCE_START_TIME: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM')
+    .default('08:30'),
   RETENTION_MONTHS: z.coerce.number().int().min(1).default(12),
   AUDIT_RETENTION_MONTHS: z.coerce.number().int().min(1).default(24),
   ENABLE_JOBS: bool.default(true),
@@ -64,27 +69,36 @@ if (raw.SMS_PROVIDER === 'africastalking' && (!raw.AT_USERNAME || !raw.AT_API_KE
 }
 
 /**
- * Optional first admin, created on startup if no staff account exists yet (for hosts without a
- * shell). A bad value is logged and skipped rather than stopping the whole app.
+ * An email/password pair from PREFIX_EMAIL and PREFIX_PASSWORD (for hosts without a shell). A bad
+ * value is logged and skipped rather than stopping the whole app.
  */
-function bootstrapAdminConfig() {
-  const email = cleaned.BOOTSTRAP_ADMIN_EMAIL?.replace(/^["']|["']$/g, '').toLowerCase();
-  const password = cleaned.BOOTSTRAP_ADMIN_PASSWORD;
+function adminCredentials(prefix: 'BOOTSTRAP_ADMIN' | 'RECOVER_ADMIN'): { email?: string; password?: string } {
+  const email = cleaned[`${prefix}_EMAIL`]?.replace(/^["']|["']$/g, '').toLowerCase();
+  const password = cleaned[`${prefix}_PASSWORD`];
   if (!email && !password) return {};
   if (!email || !z.email().safeParse(email).success) {
-    console.warn('[env] BOOTSTRAP_ADMIN_EMAIL is missing or not a valid email; no admin will be created');
+    console.warn(`[env] ${prefix}_EMAIL is missing or not a valid email; ignoring it`);
     return {};
   }
   if (!password || password.length < 12) {
-    console.warn('[env] BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters; no admin will be created');
+    console.warn(`[env] ${prefix}_PASSWORD must be at least 12 characters; ignoring it`);
     return {};
   }
-  return { BOOTSTRAP_ADMIN_EMAIL: email, BOOTSTRAP_ADMIN_PASSWORD: password };
+  return { email, password };
 }
+
+// Optional first admin, created on startup if no staff account exists yet.
+const bootstrap = adminCredentials('BOOTSTRAP_ADMIN');
+// Emergency way back in when every admin is locked out: on startup this admin's password is set
+// (the account is created or re-enabled if needed). Remove both settings once signed in.
+const recover = adminCredentials('RECOVER_ADMIN');
 
 export const env = {
   ...raw,
-  ...bootstrapAdminConfig(),
+  BOOTSTRAP_ADMIN_EMAIL: bootstrap.email,
+  BOOTSTRAP_ADMIN_PASSWORD: bootstrap.password,
+  RECOVER_ADMIN_EMAIL: recover.email,
+  RECOVER_ADMIN_PASSWORD: recover.password,
   COOKIE_SECURE: raw.COOKIE_SECURE ?? raw.NODE_ENV === 'production',
   CLIENT_ORIGINS: clientOrigin.split(',').map((o) => o.trim()),
 };

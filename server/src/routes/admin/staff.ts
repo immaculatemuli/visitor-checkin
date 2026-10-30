@@ -4,15 +4,9 @@ import { z } from 'zod';
 import { prisma } from '../../db';
 import { audit } from '../../lib/audit';
 import { HttpError } from '../../lib/http';
+import { staffPasswordSchema as password } from '../../schemas';
 
 export const staffRouter = Router();
-
-const password = z
-  .string()
-  .min(10, 'Password must be at least 10 characters')
-  .max(200)
-  .regex(/[A-Za-z]/, 'Password must contain a letter')
-  .regex(/\d/, 'Password must contain a number');
 
 const publicFields = { id: true, name: true, email: true, role: true, active: true, lastLoginAt: true, createdAt: true };
 
