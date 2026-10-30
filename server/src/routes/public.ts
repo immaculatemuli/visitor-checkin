@@ -43,7 +43,11 @@ async function requireOnSite(req: Request, category: VisitCategory, who: string)
   const status = await officeNetworkStatus(req.ip);
   if (status.onSite) return;
   await audit(req, 'OFFSITE_CHECKIN_BLOCKED', { name: who, category, network: status.network });
-  throw new HttpError(403, 'Check-in only works on the NYS Wi-Fi. Connect to the office Wi-Fi and try again.', { code: 'OFF_SITE' });
+  throw new HttpError(
+    403,
+    'Check-in only works on the NYS Wi-Fi. Connect to it and try again. If you are already on it, ask reception to approve this network.',
+    { code: 'OFF_SITE' },
+  );
 }
 
 /** Opening the reception QR link: a valid code unlocks self check-in on this phone for a while. */

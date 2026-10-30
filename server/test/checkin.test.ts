@@ -432,6 +432,24 @@ describe('office Wi-Fi', () => {
     await request(app).post('/api/public/checkin').set(AJAX).set(HOME).send(nationalId).expect(201);
   });
 
+  it("lists refused networks so an admin can approve the office's other address from anywhere", async () => {
+    const admin = await addOfficeNetwork();
+    // The office's second internet line: refused until approved.
+    const SECOND = { 'X-Forwarded-For': '197.254.106.222' };
+    await request(app).post('/api/public/checkin').set(AJAX).set(SECOND).send(attachee).expect(403);
+    await request(app).post('/api/public/checkin').set(AJAX).set(SECOND).send(attachee).expect(403);
+
+    const list = await admin.get('/api/admin/networks').set(HOME).expect(200);
+    expect(list.body.blocked).toEqual([
+      expect.objectContaining({ network: '197.254.106.222', attempts: 2, names: ['Grace Akinyi Wanjiku'] }),
+    ]);
+
+    await admin.post('/api/admin/networks').set(AJAX).set(HOME).send({ label: 'Second line', network: 'not-an-ip' }).expect(400);
+    await admin.post('/api/admin/networks').set(AJAX).set(HOME).send({ label: 'Second line', network: '197.254.106.222' }).expect(201);
+    expect((await admin.get('/api/admin/networks').expect(200)).body.blocked).toEqual([]);
+    await request(app).post('/api/public/checkin').set(AJAX).set(SECOND).send(attachee).expect(201);
+  });
+
   it('shows staff whether they are on a recognised network, and only admins can add one', async () => {
     const admin = await addOfficeNetwork();
     const here = await admin.get('/api/admin/networks').set(OFFICE).expect(200);

@@ -9,6 +9,8 @@ export interface NetworksResponse {
   policy: 'attachee' | 'all' | 'off';
   current: { network: string | null; recognised: boolean };
   networks: { id: string; network: string; label: string; addedBy: string | null; createdAt: string }[];
+  /** Networks check-ins were refused from in the last week, not yet approved. */
+  blocked: { network: string; attempts: number; lastAt: string; names: string[] }[];
 }
 
 const POLICY_TEXT: Record<NetworksResponse['policy'], string> = {
@@ -40,6 +42,18 @@ export default function OfficeWifi() {
       setMessage({ tone: 'error', text: errorMessage(err) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function approve(b: NetworksResponse['blocked'][number]) {
+    if (!confirm(`Approve ${b.network} as an office network? Only do this if these check-ins really came from the office Wi-Fi.`)) return;
+    setMessage(null);
+    try {
+      await api('/admin/networks', { method: 'POST', body: { label: 'NYS office Wi-Fi (approved)', network: b.network } });
+      setMessage({ tone: 'success', text: 'Approved. Check-ins from that network now work.' });
+      void data.reload();
+    } catch (err) {
+      setMessage({ tone: 'error', text: errorMessage(err) });
     }
   }
 
@@ -101,6 +115,50 @@ export default function OfficeWifi() {
       </Card>
 
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
+
+      {d && d.blocked.length > 0 && (
+        <Card className="overflow-x-auto p-0">
+          <div className="px-4 pt-4">
+            <h2 className="font-semibold">Refused recently</h2>
+            <p className="text-sm text-slate-600">
+              Check-ins refused in the last 7 days. If people were refused while on the office Wi-Fi, the office has another internet
+              address: approve it here.
+            </p>
+          </div>
+          <table className="mt-3 min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Internet address</th>
+                <th className="px-4 py-3">Who was refused</th>
+                <th className="px-4 py-3">Last attempt</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {d.blocked.map((b) => (
+                <tr key={b.network}>
+                  <td className="px-4 py-3 font-mono text-xs">{b.network}</td>
+                  <td className="px-4 py-3">
+                    {b.names.join(', ')}
+                    <span className="text-slate-500">
+                      {' '}
+                      · {b.attempts} attempt{b.attempts === 1 ? '' : 's'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{formatDateTime(b.lastAt)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {isAdmin && (
+                      <Button size="sm" variant="outline" onClick={() => void approve(b)}>
+                        Approve
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
 
       <Card className="overflow-x-auto p-0">
         <table className="min-w-full text-sm">

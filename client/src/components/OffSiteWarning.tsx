@@ -9,7 +9,8 @@ export function OffSiteWarning({ category }: { category: VisitCategory }) {
   return (
     <div className="mb-5">
       <Alert tone="warning" title="Connect to the NYS Wi-Fi">
-        You need to be on the office Wi-Fi to check in. Turn off mobile data, join the NYS Wi-Fi, then reload this page.
+        You need to be on the office Wi-Fi to check in. Turn off mobile data, join the NYS Wi-Fi, then reload this page. If you are
+        already on it, ask reception: they can approve this network in the dashboard.
       </Alert>
     </div>
   );
